@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/wyre-technology/ninjaone-mcp/compare/v1.2.4...v1.3.0) (2026-03-10)
+
+
+### Features
+
+* **elicitation:** add MCP elicitation support with graceful fallback ([#1](https://github.com/wyre-technology/ninjaone-mcp/issues/1)) ([db4d1b3](https://github.com/wyre-technology/ninjaone-mcp/commit/db4d1b32bcdc8c670bf85fd003424693958d4022))
+
 ## [1.2.4](https://github.com/wyre-technology/ninjaone-mcp/compare/v1.2.3...v1.2.4) (2026-02-24)
 
 
