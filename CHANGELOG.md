@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/wyre-technology/ninjaone-mcp/compare/v1.3.1...v1.3.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* remove unused beforeEach import in http-transport test ([802c6ad](https://github.com/wyre-technology/ninjaone-mcp/commit/802c6ad4eae00fa2cb201f6aedbce930bd08fa20))
+
 ## [1.3.1](https://github.com/wyre-technology/ninjaone-mcp/compare/v1.3.0...v1.3.1) (2026-03-26)
 
 
