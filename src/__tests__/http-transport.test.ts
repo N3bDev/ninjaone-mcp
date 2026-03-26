@@ -5,7 +5,7 @@
  * and gateway authentication.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 
 // We test the HTTP server by spawning the actual process
