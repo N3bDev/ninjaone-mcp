@@ -2,13 +2,28 @@
  * Devices domain handler
  *
  * Provides tools for device operations in NinjaOne.
+ * Uses the NinjaOne device filter (df) parameter for efficient server-side filtering.
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
-import { elicitSelection } from "../utils/elicitation.js";
+
+/**
+ * Build a NinjaOne device filter (df) string from common parameters.
+ */
+function buildDf(args: Record<string, unknown>): string | undefined {
+  const parts: string[] = [];
+
+  if (args.organization_id) parts.push(`org=${args.organization_id}`);
+  if (args.device_class) parts.push(`class=${args.device_class}`);
+
+  if (args.online === true) parts.push("online");
+  else if (args.online === false) parts.push("offline");
+
+  return parts.length > 0 ? parts.join(" AND ") : undefined;
+}
 
 /**
  * Get device domain tools
@@ -18,7 +33,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_devices_list",
       description:
-        "List devices in NinjaOne. Can filter by organization, device class, or online status.",
+        "List devices in NinjaOne with server-side filtering. Returns basic device info including ID, name, organization, class, online status, and last contact time. Use the detailed variant for full device data with references.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -28,12 +43,23 @@ function getTools(): Tool[] {
           },
           device_class: {
             type: "string",
-            enum: ["WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "LINUX", "VMWARE_VM"],
-            description: "Filter by device class",
+            enum: [
+              "WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "MAC_SERVER",
+              "LINUX_WORKSTATION", "LINUX_SERVER",
+              "VMWARE_VM_HOST", "VMWARE_VM_GUEST",
+              "CLOUD_MONITOR_TARGET",
+              "NMS_SWITCH", "NMS_ROUTER", "NMS_FIREWALL", "NMS_PRINTER",
+              "NMS_WAP", "NMS_COMPUTER", "NMS_SERVER", "NMS_OTHER",
+            ],
+            description: "Filter by device class/type",
           },
           online: {
             type: "boolean",
-            description: "Filter by online status (true for online, false for offline)",
+            description: "Filter by online status (true = online only, false = offline only)",
+          },
+          df: {
+            type: "string",
+            description: "Raw NinjaOne device filter string for advanced filtering. Examples: 'offline AND class=WINDOWS_SERVER', 'org=1 AND online', 'created after 2024-01-01'. Overrides other filter params when provided.",
           },
           limit: {
             type: "number",
@@ -47,8 +73,231 @@ function getTools(): Tool[] {
       },
     },
     {
+      name: "ninjaone_devices_list_detailed",
+      description:
+        "List devices with full details including organization name, location, policy, role, warranty, backup usage, and all references. More data per device than the basic list. Use for comprehensive device inventory or when you need organization/location names.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          organization_id: {
+            type: "number",
+            description: "Filter devices by organization ID",
+          },
+          device_class: {
+            type: "string",
+            enum: [
+              "WINDOWS_WORKSTATION", "WINDOWS_SERVER", "MAC", "MAC_SERVER",
+              "LINUX_WORKSTATION", "LINUX_SERVER",
+              "VMWARE_VM_HOST", "VMWARE_VM_GUEST",
+            ],
+            description: "Filter by device class/type",
+          },
+          online: {
+            type: "boolean",
+            description: "Filter by online status",
+          },
+          df: {
+            type: "string",
+            description: "Raw NinjaOne device filter string. Overrides other filter params.",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results (default: 50)",
+          },
+        },
+      },
+    },
+    {
+      name: "ninjaone_devices_search",
+      description:
+        "Search for devices by name or other criteria. Returns matching devices with their IDs. Use this when you need to find a device by name.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          query: {
+            type: "string",
+            description: "Search query (device name, DNS name, etc.)",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results (default: 50)",
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
       name: "ninjaone_devices_get",
-      description: "Get details for a specific device by its ID",
+      description: "Get full details for a specific device by its ID",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_health",
+      description:
+        "Get device health summary for all devices or filtered set. Returns offline status, alert counts, patch status, threat counts, and overall health status per device. Ideal for monitoring dashboards and identifying unhealthy devices.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          organization_id: {
+            type: "number",
+            description: "Filter by organization ID",
+          },
+          device_class: {
+            type: "string",
+            description: "Filter by device class",
+          },
+          health: {
+            type: "string",
+            enum: ["HEALTHY", "UNHEALTHY", "UNKNOWN"],
+            description: "Filter by health status",
+          },
+          df: {
+            type: "string",
+            description: "Raw NinjaOne device filter string",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results (default: 200)",
+          },
+        },
+      },
+    },
+    {
+      name: "ninjaone_devices_os",
+      description:
+        "Get operating system information for all devices or filtered set. Returns OS name, version, architecture, build number, last boot time, and reboot status per device.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          organization_id: {
+            type: "number",
+            description: "Filter by organization ID",
+          },
+          device_class: {
+            type: "string",
+            description: "Filter by device class",
+          },
+          df: {
+            type: "string",
+            description: "Raw NinjaOne device filter string",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results (default: 200)",
+          },
+        },
+      },
+    },
+    {
+      name: "ninjaone_devices_software",
+      description:
+        "Get software installed on a specific device. Returns software name, publisher, version, install date, and size.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID to get software inventory for",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_disks",
+      description:
+        "Get disk drive information for a specific device. Returns physical disk details including model, size, interface type, and SMART status.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_volumes",
+      description:
+        "Get storage volumes for a specific device. Returns drive letter, capacity, free space, file system, and optional BitLocker status.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+          include_bitlocker: {
+            type: "boolean",
+            description: "Include BitLocker encryption status (default: false)",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_network_interfaces",
+      description:
+        "Get network interface details for a specific device. Returns adapter name, IP addresses, MAC addresses, link speed, and status.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_os_patches",
+      description:
+        "Get OS patches for a specific device. Can show pending/approved/rejected patches or installation history.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+          status: {
+            type: "string",
+            enum: ["FAILED", "INSTALLED", "APPROVED", "MANUAL"],
+            description: "Filter by patch status",
+          },
+          installed_after: {
+            type: "string",
+            description: "Only include patches installed after this date (YYYY-MM-DD)",
+          },
+          installed_before: {
+            type: "string",
+            description: "Only include patches installed before this date (YYYY-MM-DD)",
+          },
+          type: {
+            type: "string",
+            enum: ["pending", "installed"],
+            description: "pending = pending/rejected patches, installed = installation history (default: pending)",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_custom_fields",
+      description:
+        "Get or update custom field values for a specific device.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -154,57 +403,71 @@ async function handleCall(
     case "ninjaone_devices_list": {
       const limit = (args.limit as number) || 50;
       const cursor = args.cursor as string | undefined;
-      let organizationId = args.organization_id as number | undefined;
+      const df = (args.df as string) || buildDf(args);
 
-      // If no organization filter provided, elicit organization selection
-      const hasOrgFilter = args.organization_id !== undefined;
-
-      if (!hasOrgFilter) {
-        try {
-          // Fetch organizations to present as options
-          const orgs = await client.organizations.list();
-          if (orgs.length > 0) {
-            const options = orgs.slice(0, 20).map((org) => ({
-              value: String(org.id),
-              label: String(org.name || `Organization ${org.id}`),
-            }));
-            options.push({ value: "all", label: "All organizations (no filter)" });
-
-            const selection = await elicitSelection(
-              "No organization filter provided. Would you like to filter devices by organization?",
-              "organization",
-              options
-            );
-
-            if (selection && selection !== "all") {
-              organizationId = parseInt(selection, 10);
-            }
-          }
-        } catch {
-          // If org fetch fails, proceed without filter
-        }
-      }
-
-      logger.info("API call: devices.list", {
-        organizationId,
-        deviceClass: args.device_class,
-        online: args.online,
-        limit,
-        cursor,
-      });
+      logger.info("API call: devices.list", { df, limit, cursor });
 
       const devices = await client.devices.list({
-        organizationId,
         pageSize: limit,
         cursor,
+        ...(df ? {} : { organizationId: args.organization_id as number | undefined }),
       });
-      logger.debug("API response: devices.list", { deviceCount: devices.length });
+
+      // If using df, we need to pass it via the detailed endpoint since basic list doesn't support df.
+      // Actually the basic /v2/devices supports df too per the API docs, but our client needs updating.
+      // For now, use listDetailed when df is set.
+      let result;
+      if (df) {
+        result = await client.devices.listDetailed({ df, pageSize: limit, cursor });
+      } else {
+        result = devices;
+      }
+
+      logger.debug("API response: devices.list", { deviceCount: result.length });
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify({ devices }, null, 2),
+            text: JSON.stringify({ total: result.length, devices: result }, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "ninjaone_devices_list_detailed": {
+      const limit = (args.limit as number) || 50;
+      const df = (args.df as string) || buildDf(args);
+
+      logger.info("API call: devices.listDetailed", { df, limit });
+
+      const devices = await client.devices.listDetailed({ df, pageSize: limit });
+      logger.debug("API response: devices.listDetailed", { deviceCount: devices.length });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ total: devices.length, devices }, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "ninjaone_devices_search": {
+      const query = args.query as string;
+      const limit = (args.limit as number) || 50;
+
+      logger.info("API call: devices.search", { query, limit });
+
+      const response = await client.devices.search(query, limit);
+      logger.debug("API response: devices.search", { response });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response, null, 2),
           },
         ],
       };
@@ -227,12 +490,125 @@ async function handleCall(
       };
     }
 
+    case "ninjaone_devices_health": {
+      const limit = (args.limit as number) || 200;
+      const df = (args.df as string) || buildDf(args);
+
+      logger.info("API call: queries.deviceHealth", { df, limit });
+
+      const response = await client.queries.deviceHealth({ df, pageSize: limit });
+      const results = response.results || [];
+      logger.debug("API response: queries.deviceHealth", { count: results.length });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ total: results.length, results }, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "ninjaone_devices_os": {
+      const limit = (args.limit as number) || 200;
+      const df = (args.df as string) || buildDf(args);
+
+      logger.info("API call: queries.operatingSystems", { df, limit });
+
+      const response = await client.queries.operatingSystems({ df, pageSize: limit });
+      const results = response.results || [];
+      logger.debug("API response: queries.operatingSystems", { count: results.length });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ total: results.length, results }, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "ninjaone_devices_software": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getSoftware", { deviceId });
+      const software = await client.devices.getSoftware(deviceId);
+      logger.debug("API response: devices.getSoftware", { count: Array.isArray(software) ? software.length : 0 });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(software, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_disks": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getDisks", { deviceId });
+      const disks = await client.devices.getDisks(deviceId);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(disks, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_volumes": {
+      const deviceId = args.device_id as number;
+      const includeBl = args.include_bitlocker ? "bl" : undefined;
+      logger.info("API call: devices.getVolumes", { deviceId, includeBl });
+      const volumes = await client.devices.getVolumes(deviceId, includeBl);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(volumes, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_network_interfaces": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getNetworkInterfaces", { deviceId });
+      const interfaces = await client.devices.getNetworkInterfaces(deviceId);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(interfaces, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_os_patches": {
+      const deviceId = args.device_id as number;
+      const patchType = (args.type as string) || "pending";
+      const query: Record<string, unknown> = {};
+      if (args.status) query.status = args.status;
+      if (args.installed_after) query.installedAfter = args.installed_after;
+      if (args.installed_before) query.installedBefore = args.installed_before;
+
+      logger.info("API call: devices.getOsPatches", { deviceId, patchType, query });
+
+      let patches;
+      if (patchType === "installed") {
+        patches = await client.devices.getOsPatchInstalls(deviceId, query);
+      } else {
+        patches = await client.devices.getOsPatches(deviceId, query);
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(patches, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_custom_fields": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getCustomFields", { deviceId });
+      const fields = await client.devices.getCustomFields(deviceId);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(fields, null, 2) }],
+      };
+    }
+
     case "ninjaone_devices_reboot": {
       const deviceId = args.device_id as number;
       const reason = args.reason as string | undefined;
       logger.info("API call: devices.reboot", { deviceId, reason });
       const result = await client.devices.reboot(deviceId, reason);
-      logger.debug("API response: devices.reboot", { result });
 
       return {
         content: [
@@ -256,7 +632,6 @@ async function handleCall(
       if (stateFilter) {
         services = services.filter((s) => s.state === stateFilter);
       }
-      logger.debug("API response: devices.getServices", { services });
 
       return {
         content: [{ type: "text", text: JSON.stringify(services, null, 2) }],
@@ -271,7 +646,6 @@ async function handleCall(
       if (severityFilter) {
         alerts = alerts.filter((a) => a.severity === severityFilter);
       }
-      logger.debug("API response: alerts.listByDevice", { alerts });
 
       return {
         content: [{ type: "text", text: JSON.stringify(alerts, null, 2) }],
@@ -285,7 +659,6 @@ async function handleCall(
       const activities = await client.devices.getActivities(deviceId, {
         pageSize: limit,
       });
-      logger.debug("API response: devices.getActivities", { activities });
 
       return {
         content: [{ type: "text", text: JSON.stringify(activities, null, 2) }],

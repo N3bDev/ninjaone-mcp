@@ -325,14 +325,9 @@ async function reportTicketsRecent(
   limit: number
 ): Promise<CallToolResult> {
   const days = (args.days as number) || 7;
-  const cutoffDate = new Date(daysAgo(days)).toISOString().split("T")[0];
+  const cutoffMs = daysAgo(days);
 
-  logger.info("Report: tickets_recent", { days, cutoffDate });
-
-  // Use board search filter for createTime
-  const filters: Array<{ field: string; operator: string; value: string }> = [
-    { field: "createTime", operator: "is_after", value: cutoffDate },
-  ];
+  logger.info("Report: tickets_recent", { days, cutoffDate: new Date(cutoffMs).toISOString() });
 
   const tickets = await client.tickets.listAll({
     status: args.status as TicketStatus | undefined,
@@ -340,15 +335,10 @@ async function reportTicketsRecent(
     organizationId: args.organization_id as number | undefined,
     boardId: args.board_id as number | undefined,
     maxRecords: limit,
-    filters,
+    createdAfterMs: cutoffMs,
   });
 
-  // Client-side fallback filter on createTime in case board filter isn't supported
-  const cutoffMs = daysAgo(days);
-  const filtered = tickets.filter((t) => {
-    const createTime = toMs((t as Record<string, unknown>).createTime);
-    return createTime >= cutoffMs;
-  });
+  const filtered = tickets;
 
   // Sort newest first
   filtered.sort((a, b) => {

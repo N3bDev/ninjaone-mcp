@@ -72,6 +72,48 @@ class DevicesApi {
 
     return this.http.get<ApiRecord[]>(`/v2/organization/${orgId}/devices`, query);
   }
+
+  async search(query: string, limit = 50): Promise<unknown> {
+    return this.http.get("/v2/devices/search", { q: query, limit });
+  }
+
+  async getSoftware(deviceId: number): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/software`);
+  }
+
+  async getDisks(deviceId: number): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/disks`);
+  }
+
+  async getVolumes(deviceId: number, include?: string): Promise<ApiRecord[]> {
+    const query: Record<string, unknown> = {};
+    if (include) query.include = include;
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/volumes`, query);
+  }
+
+  async getNetworkInterfaces(deviceId: number): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/network-interfaces`);
+  }
+
+  async getOsPatches(deviceId: number, params?: Record<string, unknown>): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/os-patches`, params);
+  }
+
+  async getOsPatchInstalls(deviceId: number, params?: Record<string, unknown>): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/os-patch-installs`, params);
+  }
+
+  async getCustomFields(deviceId: number): Promise<ApiRecord> {
+    return this.http.get<ApiRecord>(`/v2/device/${deviceId}/custom-fields`);
+  }
+
+  async getProcessors(deviceId: number): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>(`/v2/device/${deviceId}/processors`);
+  }
+
+  async getLastLoggedOnUser(deviceId: number): Promise<ApiRecord> {
+    return this.http.get<ApiRecord>(`/v2/device/${deviceId}/last-logged-on-user`);
+  }
 }
 
 // ── Organizations API ──────────────────────────────────────────
@@ -219,10 +261,10 @@ class TicketsApi {
 
   /**
    * Fetch all tickets across all boards with full pagination.
-   * Supports optional board search filters for server-side filtering.
+   * Applies client-side filtering for status, priority, org, device, and time range.
    */
   async listAll(
-    params?: TicketListParams & { maxRecords?: number; filters?: Array<{ field: string; operator: string; value: string }> }
+    params?: TicketListParams & { maxRecords?: number; createdAfterMs?: number }
   ): Promise<ApiRecord[]> {
     const maxRecords = params?.maxRecords ?? 1000;
     const pageSize = Math.min(params?.pageSize ?? 200, 200);
@@ -249,7 +291,6 @@ class TicketsApi {
           sortBy: [{ field: "lastUpdated", direction: "DESC" }],
           pageSize,
           lastCursorId: cursor,
-          filters: params?.filters,
         });
 
         const obj = response as Record<string, unknown>;
@@ -267,6 +308,15 @@ class TicketsApi {
           if (params?.priority && t.priority !== params.priority) continue;
           if (params?.organizationId && t.clientId !== params.organizationId && t.organizationId !== params.organizationId) continue;
           if (params?.deviceId && t.nodeId !== params.deviceId) continue;
+
+          // Time-based filter: skip tickets created before the cutoff
+          if (params?.createdAfterMs) {
+            const createTime = Number(t.createTime || 0);
+            // Normalize: if it looks like seconds, convert to ms
+            const createMs = createTime < 5_000_000_000 ? createTime * 1000 : createTime;
+            if (createMs < params.createdAfterMs) continue;
+          }
+
           allTickets.push(ticket);
           if (allTickets.length >= maxRecords) break;
         }

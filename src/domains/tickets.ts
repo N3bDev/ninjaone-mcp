@@ -70,10 +70,20 @@ function getTools(): Tool[] {
             description:
               "Filter tickets by ticket board ID. Use ninjaone_tickets_list_boards to find board IDs.",
           },
+          created_within_days: {
+            type: "number",
+            description:
+              "Only return tickets created within the last N days. For example, 7 returns tickets from the past week, 30 from the past month.",
+          },
+          search: {
+            type: "string",
+            description:
+              "Search text to filter tickets by subject or description.",
+          },
           limit: {
             type: "number",
             description:
-              "Maximum number of results to return (default: 50, max recommended: 200).",
+              "Maximum number of results to return (default: 50, max: 1000). Use higher values with created_within_days to get complete results for a time period.",
           },
           cursor: {
             type: "string",
@@ -437,16 +447,45 @@ async function handleCall(
     case "ninjaone_tickets_list": {
       const limit = (args.limit as number) || 50;
       const cursor = args.cursor as string | undefined;
+      const createdWithinDays = args.created_within_days as number | undefined;
+
       logger.info("API call: tickets.list", {
         status: args.status,
         priority: args.priority,
         organizationId: args.organization_id,
         deviceId: args.device_id,
         boardId: args.board_id,
+        createdWithinDays,
         limit,
         cursor,
       });
 
+      // When time-based filtering is requested, use listAll with pagination
+      if (createdWithinDays) {
+        const createdAfterMs = Date.now() - createdWithinDays * 86_400_000;
+        const tickets = await client.tickets.listAll({
+          status: args.status as TicketStatus | undefined,
+          priority: args.priority as TicketPriority | undefined,
+          organizationId: args.organization_id as number | undefined,
+          deviceId: args.device_id as number | undefined,
+          boardId: args.board_id as number | undefined,
+          maxRecords: Math.min(limit, 1000),
+          createdAfterMs,
+        });
+
+        const summary = `Found ${tickets.length} ticket(s) created in the last ${createdWithinDays} day(s)${args.status ? ` with status ${args.status}` : ""}${args.organization_id ? ` for organization ${args.organization_id}` : ""}`;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ summary, total: tickets.length, tickets }, null, 2),
+            },
+          ],
+        };
+      }
+
+      // Standard listing with pagination
       const response = await client.tickets.list({
         status: args.status as TicketStatus | undefined,
         priority: args.priority as TicketPriority | undefined,
