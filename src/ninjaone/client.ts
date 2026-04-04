@@ -232,10 +232,6 @@ class TicketsApi {
     return this.http.get<ApiRecord[]>(`/v2/ticketing/ticket/${ticketId}/log-entry`, query);
   }
 
-  async getAttachments(ticketId: number): Promise<ApiRecord[]> {
-    return this.http.get<ApiRecord[]>(`/v2/ticketing/ticket/${ticketId}/attachment`);
-  }
-
   async listBoards(): Promise<ApiRecord[]> {
     return this.http.get<ApiRecord[]>("/v2/ticketing/trigger/boards");
   }
@@ -244,11 +240,15 @@ class TicketsApi {
     boardId: number,
     params?: TicketBoardSearchParams
   ): Promise<unknown> {
-    return this.http.post(`/v2/ticketing/trigger/board/${boardId}/run`, {
+    const body: Record<string, unknown> = {
       sortBy: params?.sortBy ?? [{ field: "lastUpdated", direction: "DESC" }],
       pageSize: params?.pageSize ?? 50,
-      lastCursorId: params?.lastCursorId,
-    });
+    };
+    if (params?.lastCursorId !== undefined) body.lastCursorId = params.lastCursorId;
+    if (params?.searchCriteria) body.searchCriteria = params.searchCriteria;
+    if (params?.filters) body.filters = params.filters;
+
+    return this.http.post(`/v2/ticketing/trigger/board/${boardId}/run`, body);
   }
 
   async listForms(): Promise<ApiRecord[]> {
@@ -269,10 +269,6 @@ class TicketsApi {
 
   async getContacts(): Promise<ApiRecord[]> {
     return this.http.get<ApiRecord[]>("/v2/ticketing/contact/contacts");
-  }
-
-  async getUsers(): Promise<ApiRecord[]> {
-    return this.http.get<ApiRecord[]>("/v2/ticketing/app-user-contact");
   }
 }
 

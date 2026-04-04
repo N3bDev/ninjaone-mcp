@@ -151,13 +151,15 @@ function getTools(): Tool[] {
             description:
               "Ticket form ID to use. Forms define custom fields and layout. Use ninjaone_tickets_list_forms to find form IDs.",
           },
-          requester_email: {
+          status: {
             type: "string",
-            description: "Email address of the ticket requester.",
+            description:
+              "Initial ticket status ID. Use ninjaone_tickets_list_statuses to find valid status IDs.",
           },
-          requester_name: {
+          requester_uid: {
             type: "string",
-            description: "Name of the ticket requester.",
+            description:
+              "UUID of the ticket requester. Use ninjaone_tickets_list_contacts to find requester UIDs.",
           },
           due_date: {
             type: "number",
@@ -193,9 +195,8 @@ function getTools(): Tool[] {
           },
           status: {
             type: "string",
-            enum: ["OPEN", "IN_PROGRESS", "WAITING", "ON_HOLD", "RESOLVED", "CLOSED"],
             description:
-              "New ticket status. Changing to CLOSED resolves the ticket. Changing to IN_PROGRESS indicates active work.",
+              "New ticket status ID. Use ninjaone_tickets_list_statuses to find valid status IDs and their display names.",
           },
           priority: {
             type: "string",
@@ -284,30 +285,14 @@ function getTools(): Tool[] {
           },
           type: {
             type: "string",
-            enum: ["DESCRIPTION", "COMMENT", "CONDITION", "SAVE", "DELETE"],
+            enum: ["DESCRIPTION", "COMMENT", "CONDITION", "SAVE", "DELETE", "PRODUCT", "INFO"],
             description:
-              "Filter log entries by type. COMMENT = user/tech comments, DESCRIPTION = description changes, SAVE = field updates, CONDITION = automated condition triggers, DELETE = deletions. Omit to get all entry types.",
+              "Filter log entries by type. COMMENT = user/tech comments, DESCRIPTION = description changes, SAVE = field updates, CONDITION = automated condition triggers, DELETE = deletions, PRODUCT = product entries, INFO = info entries. Omit to get all entry types.",
           },
         },
         required: ["ticket_id"],
       },
     },
-    {
-      name: "ninjaone_tickets_get_attachments",
-      description:
-        "Get file attachments for a ticket. Returns attachment metadata including file names, content types, sizes, and upload times.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          ticket_id: {
-            type: "number",
-            description: "The ticket ID to get attachments for. Required.",
-          },
-        },
-        required: ["ticket_id"],
-      },
-    },
-
     // ── Boards ─────────────────────────────────────────────────
     {
       name: "ninjaone_tickets_list_boards",
@@ -343,8 +328,12 @@ function getTools(): Tool[] {
             description: "Number of results per page (default: 50).",
           },
           last_cursor_id: {
+            type: "number",
+            description: "Last cursor ID from previous response for next page.",
+          },
+          search: {
             type: "string",
-            description: "Pagination cursor from previous response for next page.",
+            description: "Search text to filter tickets by subject or description.",
           },
         },
         required: ["board_id"],
@@ -405,16 +394,6 @@ function getTools(): Tool[] {
         properties: {},
       },
     },
-    {
-      name: "ninjaone_tickets_list_users",
-      description:
-        "List users by type for ticket assignment. Returns technicians and other users who can be assigned to tickets. Use this to find valid assignee_id values for ticket assignment.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {},
-      },
-    },
-
     // ── Summary ────────────────────────────────────────────────
     {
       name: "ninjaone_tickets_summary",
@@ -520,21 +499,29 @@ async function handleCall(
 
       logger.info("API call: tickets.create", { subject, organizationId });
 
+      // NinjaOne API uses clientId (not organizationId) and nodeId (not deviceId).
+      // The description field is an object with body, public, etc.
       const createParams: Record<string, unknown> = {
         subject: subject.trim(),
-        description: args.description as string | undefined,
-        organizationId,
-        deviceId: args.device_id as number | undefined,
+        clientId: organizationId,
         priority: args.priority as TicketPriority | undefined,
         type: args.type as TicketType | undefined,
       };
 
-      // Add optional fields if provided
+      // Description is an object in the NinjaOne API
+      if (args.description) {
+        createParams.description = {
+          public: true,
+          body: args.description as string,
+        };
+      }
+
+      if (args.device_id) createParams.nodeId = args.device_id;
+      if (args.status) createParams.status = args.status;
       if (args.tags) createParams.tags = args.tags;
       if (args.board_id) createParams.boardId = args.board_id;
       if (args.ticket_form_id) createParams.ticketFormId = args.ticket_form_id;
-      if (args.requester_email) createParams.requesterEmail = args.requester_email;
-      if (args.requester_name) createParams.requesterName = args.requester_name;
+      if (args.requester_uid) createParams.requesterUid = args.requester_uid;
       if (args.due_date) createParams.dueDate = args.due_date;
       if (args.attributes) createParams.attributes = args.attributes;
 
@@ -561,19 +548,25 @@ async function handleCall(
         return errorResult("ticket_id is required. Provide the numeric ID of the ticket to update.");
       }
 
-      // Build update payload with only provided fields
+      // Fetch current ticket to get version (required for optimistic concurrency)
+      const currentTicket = await client.tickets.get(ticketId) as Record<string, unknown>;
+      const version = currentTicket.version as number | undefined;
+
+      // Build update payload with correct NinjaOne API field names
       const updateParams: Record<string, unknown> = {};
+      if (version !== undefined) updateParams.version = version;
       if (args.subject !== undefined) updateParams.subject = args.subject;
-      if (args.description !== undefined) updateParams.description = args.description;
       if (args.status !== undefined) updateParams.status = args.status;
       if (args.priority !== undefined) updateParams.priority = args.priority;
-      if (args.assignee_id !== undefined) updateParams.assigneeUid = String(args.assignee_id);
+      if (args.assignee_id !== undefined) updateParams.assignedAppUserId = args.assignee_id;
       if (args.type !== undefined) updateParams.type = args.type;
       if (args.tags !== undefined) updateParams.tags = args.tags;
       if (args.due_date !== undefined) updateParams.dueDate = args.due_date;
       if (args.attributes !== undefined) updateParams.attributes = args.attributes;
+      if (args.organization_id !== undefined) updateParams.clientId = args.organization_id;
+      if (args.device_id !== undefined) updateParams.nodeId = args.device_id;
 
-      const fieldsUpdated = Object.keys(updateParams);
+      const fieldsUpdated = Object.keys(updateParams).filter((k) => k !== "version");
       if (fieldsUpdated.length === 0) {
         return errorResult(
           "No fields to update. Provide at least one of: subject, description, status, priority, type, assignee_id, tags, due_date, attributes."
@@ -695,34 +688,6 @@ async function handleCall(
       };
     }
 
-    case "ninjaone_tickets_get_attachments": {
-      const ticketId = resolveTicketId(args);
-      if (!ticketId) {
-        return errorResult("ticket_id is required. Provide the numeric ID of the ticket.");
-      }
-
-      logger.info("API call: tickets.getAttachments", { ticketId });
-      const attachments = await client.tickets.getAttachments(ticketId);
-      logger.debug("API response: tickets.getAttachments", { attachments });
-
-      const attachmentList = Array.isArray(attachments) ? attachments : [];
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                summary: `${attachmentList.length} attachment(s) for ticket ${ticketId}`,
-                attachments,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      };
-    }
-
     // ── Boards ─────────────────────────────────────────────────
 
     case "ninjaone_tickets_list_boards": {
@@ -757,7 +722,8 @@ async function handleCall(
       const sortBy = (args.sort_by as string) || "lastUpdated";
       const sortDirection = (args.sort_direction as string) || "DESC";
       const pageSize = (args.page_size as number) || 50;
-      const lastCursorId = args.last_cursor_id as string | undefined;
+      const lastCursorId = args.last_cursor_id as number | undefined;
+      const search = args.search as string | undefined;
 
       logger.info("API call: tickets.getTicketsByBoard", { boardId, sortBy, sortDirection, pageSize });
 
@@ -765,6 +731,7 @@ async function handleCall(
         sortBy: [{ field: sortBy, direction: sortDirection }],
         pageSize,
         lastCursorId,
+        searchCriteria: search,
       });
       logger.debug("API response: tickets.getTicketsByBoard", { response });
 
@@ -879,29 +846,6 @@ async function handleCall(
               {
                 summary: `Found ${contactList.length} contact(s)`,
                 contacts,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      };
-    }
-
-    case "ninjaone_tickets_list_users": {
-      logger.info("API call: tickets.getUsers");
-      const users = await client.tickets.getUsers();
-      logger.debug("API response: tickets.getUsers", { users });
-
-      const userList = Array.isArray(users) ? users : [];
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                summary: `Found ${userList.length} user(s) available for ticket assignment`,
-                users,
               },
               null,
               2

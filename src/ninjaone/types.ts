@@ -82,31 +82,39 @@ export interface TicketListParams {
 
 export interface TicketCreateParams {
   subject: string;
-  description?: string;
-  organizationId: number;
-  deviceId?: number;
+  clientId: number;
+  description?: { public: boolean; body: string; htmlBody?: string; timeTracked?: number };
+  nodeId?: number;
+  status?: string;
   priority?: TicketPriority;
+  severity?: string;
   type?: TicketType;
   tags?: string[];
   boardId?: number;
   ticketFormId?: number;
-  requesterEmail?: string;
-  requesterName?: string;
+  requesterUid?: string;
   dueDate?: number;
-  attributes?: Record<string, unknown>;
+  attributes?: unknown[];
+  assignedAppUserId?: number;
   [key: string]: unknown;
 }
 
 export interface TicketUpdateParams {
+  version?: number;
   subject?: string;
-  description?: string;
-  status?: TicketStatus;
+  status?: string;
   priority?: TicketPriority;
+  severity?: string;
   type?: TicketType;
-  assigneeUid?: string;
+  assignedAppUserId?: number;
+  clientId?: number;
+  nodeId?: number;
+  locationId?: number;
+  ticketFormId?: number;
+  requesterUid?: string;
   tags?: string[];
   dueDate?: number;
-  attributes?: Record<string, unknown>;
+  attributes?: unknown[];
   [key: string]: unknown;
 }
 
@@ -118,7 +126,9 @@ export interface TicketCommentParams {
 export interface TicketBoardSearchParams {
   sortBy?: Array<{ field: string; direction: string }>;
   pageSize?: number;
-  lastCursorId?: string;
+  lastCursorId?: string | number;
+  searchCriteria?: string;
+  filters?: Array<{ field: string; operator: string; value: string }>;
 }
 
 // ── Device request types ───────────────────────────────────────

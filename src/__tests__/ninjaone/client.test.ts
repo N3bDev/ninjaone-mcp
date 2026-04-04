@@ -233,7 +233,7 @@ describe("NinjaOneClient", () => {
       seedToken();
       mockFetch.mockResolvedValueOnce(jsonResponse({ id: 100 }));
 
-      const params = { subject: "Test", organizationId: 1 };
+      const params = { subject: "Test", clientId: 1 };
       await client.tickets.create(params);
 
       expect(getCallPath(API)).toBe("/api/v2/ticketing/ticket");
@@ -356,13 +356,5 @@ describe("NinjaOneClient", () => {
       expect(getCallPath(API)).toBe("/api/v2/ticketing/contact/contacts");
     });
 
-    it("getUsers should GET /api/v2/ticketing/app-user-contact", async () => {
-      seedToken();
-      mockFetch.mockResolvedValueOnce(jsonResponse([]));
-
-      await client.tickets.getUsers();
-
-      expect(getCallPath(API)).toBe("/api/v2/ticketing/app-user-contact");
-    });
   });
 });

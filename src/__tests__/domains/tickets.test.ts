@@ -13,7 +13,6 @@ const {
   mockTicketsDelete,
   mockTicketsAddComment,
   mockTicketsGetComments,
-  mockTicketsGetAttachments,
   mockTicketsListBoards,
   mockTicketsGetTicketsByBoard,
   mockTicketsListForms,
@@ -21,7 +20,6 @@ const {
   mockTicketsGetStatuses,
   mockTicketsGetAttributes,
   mockTicketsGetContacts,
-  mockTicketsGetUsers,
   mockClient,
 } = vi.hoisted(() => {
   const mockTicketsList = vi.fn();
@@ -31,7 +29,6 @@ const {
   const mockTicketsDelete = vi.fn();
   const mockTicketsAddComment = vi.fn();
   const mockTicketsGetComments = vi.fn();
-  const mockTicketsGetAttachments = vi.fn();
   const mockTicketsListBoards = vi.fn();
   const mockTicketsGetTicketsByBoard = vi.fn();
   const mockTicketsListForms = vi.fn();
@@ -39,7 +36,6 @@ const {
   const mockTicketsGetStatuses = vi.fn();
   const mockTicketsGetAttributes = vi.fn();
   const mockTicketsGetContacts = vi.fn();
-  const mockTicketsGetUsers = vi.fn();
 
   const mockClient = {
     tickets: {
@@ -50,7 +46,6 @@ const {
       delete: mockTicketsDelete,
       addComment: mockTicketsAddComment,
       getComments: mockTicketsGetComments,
-      getAttachments: mockTicketsGetAttachments,
       listBoards: mockTicketsListBoards,
       getTicketsByBoard: mockTicketsGetTicketsByBoard,
       listForms: mockTicketsListForms,
@@ -58,7 +53,6 @@ const {
       getStatuses: mockTicketsGetStatuses,
       getAttributes: mockTicketsGetAttributes,
       getContacts: mockTicketsGetContacts,
-      getUsers: mockTicketsGetUsers,
     },
   };
 
@@ -70,7 +64,6 @@ const {
     mockTicketsDelete,
     mockTicketsAddComment,
     mockTicketsGetComments,
-    mockTicketsGetAttachments,
     mockTicketsListBoards,
     mockTicketsGetTicketsByBoard,
     mockTicketsListForms,
@@ -78,7 +71,6 @@ const {
     mockTicketsGetStatuses,
     mockTicketsGetAttributes,
     mockTicketsGetContacts,
-    mockTicketsGetUsers,
     mockClient,
   };
 });
@@ -112,6 +104,7 @@ describe("Tickets Domain Handler", () => {
     });
     mockTicketsGet.mockResolvedValue({
       id: 1,
+      version: 3,
       subject: "Ticket 1",
       description: "Test ticket",
       status: "OPEN",
@@ -135,9 +128,6 @@ describe("Tickets Domain Handler", () => {
     mockTicketsGetComments.mockResolvedValue([
       { id: 1, body: "Comment 1", type: "COMMENT" },
       { id: 2, body: "Description update", type: "DESCRIPTION" },
-    ]);
-    mockTicketsGetAttachments.mockResolvedValue([
-      { id: 1, fileName: "screenshot.png", size: 12345 },
     ]);
     mockTicketsListBoards.mockResolvedValue([
       { id: 1, name: "Support Board" },
@@ -171,16 +161,13 @@ describe("Tickets Domain Handler", () => {
     mockTicketsGetContacts.mockResolvedValue([
       { id: 1, name: "John Doe", email: "john@example.com" },
     ]);
-    mockTicketsGetUsers.mockResolvedValue([
-      { id: 10, name: "Tech User", role: "technician" },
-    ]);
   });
 
   describe("getTools", () => {
     it("should return all ticket tools", () => {
       const tools = ticketsHandler.getTools();
 
-      expect(tools.length).toBe(17);
+      expect(tools.length).toBe(15);
 
       const toolNames = tools.map((t) => t.name);
       // Core CRUD
@@ -192,7 +179,6 @@ describe("Tickets Domain Handler", () => {
       // Comments & Log Entries
       expect(toolNames).toContain("ninjaone_tickets_add_comment");
       expect(toolNames).toContain("ninjaone_tickets_log_entries");
-      expect(toolNames).toContain("ninjaone_tickets_get_attachments");
       // Boards
       expect(toolNames).toContain("ninjaone_tickets_list_boards");
       expect(toolNames).toContain("ninjaone_tickets_board_tickets");
@@ -201,9 +187,8 @@ describe("Tickets Domain Handler", () => {
       expect(toolNames).toContain("ninjaone_tickets_get_form");
       expect(toolNames).toContain("ninjaone_tickets_list_statuses");
       expect(toolNames).toContain("ninjaone_tickets_list_attributes");
-      // Contacts & Users
+      // Contacts
       expect(toolNames).toContain("ninjaone_tickets_list_contacts");
-      expect(toolNames).toContain("ninjaone_tickets_list_users");
       // Summary
       expect(toolNames).toContain("ninjaone_tickets_summary");
     });
@@ -373,23 +358,22 @@ describe("Tickets Domain Handler", () => {
 
         expect(mockTicketsCreate).toHaveBeenCalledWith({
           subject: "New Ticket",
-          description: "Test description",
-          organizationId: 1,
-          deviceId: 5,
+          description: { public: true, body: "Test description" },
+          clientId: 1,
+          nodeId: 5,
           priority: "HIGH",
           type: "INCIDENT",
         });
       });
 
-      it("should pass extended fields (tags, board_id, ticket_form_id, requester, due_date, attributes)", async () => {
+      it("should pass extended fields (tags, board_id, ticket_form_id, requester_uid, due_date, attributes)", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_create", {
           subject: "New Ticket",
           organization_id: 1,
           tags: ["urgent", "hardware"],
           board_id: 3,
           ticket_form_id: 5,
-          requester_email: "user@example.com",
-          requester_name: "Test User",
+          requester_uid: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
           due_date: 1700000000000,
           attributes: { customField1: "value1" },
         });
@@ -399,8 +383,7 @@ describe("Tickets Domain Handler", () => {
             tags: ["urgent", "hardware"],
             boardId: 3,
             ticketFormId: 5,
-            requesterEmail: "user@example.com",
-            requesterName: "Test User",
+            requesterUid: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
             dueDate: 1700000000000,
             attributes: { customField1: "value1" },
           })
@@ -499,14 +482,14 @@ describe("Tickets Domain Handler", () => {
         }));
       });
 
-      it("should convert assignee_id to string assigneeUid", async () => {
+      it("should pass assignee_id as assignedAppUserId", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_update", {
           ticket_id: 1,
           assignee_id: 42,
         });
 
         expect(mockTicketsUpdate).toHaveBeenCalledWith(1, expect.objectContaining({
-          assigneeUid: "42",
+          assignedAppUserId: 42,
         }));
       });
     });
@@ -671,27 +654,6 @@ describe("Tickets Domain Handler", () => {
 
     // ── Attachments ────────────────────────────────────────
 
-    describe("ninjaone_tickets_get_attachments", () => {
-      it("should get ticket attachments", async () => {
-        const result = await ticketsHandler.handleCall("ninjaone_tickets_get_attachments", {
-          ticket_id: 1,
-        });
-
-        expect(result.isError).toBeUndefined();
-        const data = JSON.parse(result.content[0].text);
-        expect(data.summary).toContain("1 attachment(s)");
-        expect(data.attachments).toHaveLength(1);
-        expect(data.attachments[0].fileName).toBe("screenshot.png");
-      });
-
-      it("should return error when ticket_id is missing", async () => {
-        const result = await ticketsHandler.handleCall("ninjaone_tickets_get_attachments", {});
-
-        expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain("ticket_id is required");
-      });
-    });
-
     // ── Boards ─────────────────────────────────────────────
 
     describe("ninjaone_tickets_list_boards", () => {
@@ -809,17 +771,6 @@ describe("Tickets Domain Handler", () => {
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("1 contact(s)");
         expect(data.contacts).toHaveLength(1);
-      });
-    });
-
-    describe("ninjaone_tickets_list_users", () => {
-      it("should list users", async () => {
-        const result = await ticketsHandler.handleCall("ninjaone_tickets_list_users", {});
-
-        expect(result.isError).toBeUndefined();
-        const data = JSON.parse(result.content[0].text);
-        expect(data.summary).toContain("1 user(s)");
-        expect(data.users).toHaveLength(1);
       });
     });
 
