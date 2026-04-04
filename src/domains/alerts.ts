@@ -6,7 +6,7 @@
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { DomainHandler, CallToolResult } from "../utils/types.js";
-import type { AlertSeverity, AlertSourceType } from "@wyre-technology/node-ninjaone";
+import type { AlertSeverity, AlertSourceType } from "../ninjaone/index.js";
 import { getClient } from "../utils/client.js";
 import { logger } from "../utils/logger.js";
 import { elicitSelection } from "../utils/elicitation.js";
@@ -240,7 +240,7 @@ async function handleCall(
       const summary: Record<string, Record<string, number>> = {};
       for (const alert of alerts) {
         if (groupBy === "severity" || groupBy === "both") {
-          const sev = alert.severity || "UNKNOWN";
+          const sev = String(alert.severity || "UNKNOWN");
           summary.bySeverity = summary.bySeverity || {};
           summary.bySeverity[sev] = (summary.bySeverity[sev] || 0) + 1;
         }
