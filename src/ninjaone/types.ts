@@ -168,3 +168,26 @@ export interface AlertListParams {
   pageSize?: number;
   cursor?: string;
 }
+
+// ── Query / Report request types ──────────────────────────────
+
+/** Parameters for /v2/queries/* endpoints that support the device filter */
+export interface QueryParams {
+  df?: string;
+  pageSize?: number;
+  cursor?: string;
+}
+
+/** Parameters for /v2/devices-detailed */
+export interface DeviceDetailedListParams {
+  df?: string;
+  pageSize?: number;
+  cursor?: string;
+  organizationId?: number;
+}
+
+/** Paginated response from /v2/queries/* endpoints */
+export interface QueryResponse<T = ApiRecord> {
+  cursor?: { name: string; offset: number; count: number; expires: number };
+  results: T[];
+}

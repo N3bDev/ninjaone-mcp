@@ -33,6 +33,11 @@ export type {
   OrganizationCreateParams,
   AlertListParams,
 
+  // Query / Report types
+  QueryParams,
+  DeviceDetailedListParams,
+  QueryResponse,
+
   // Generic
   ApiRecord,
   OAuthTokenResponse,

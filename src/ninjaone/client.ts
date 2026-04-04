@@ -15,10 +15,13 @@ import type {
   TicketCommentParams,
   TicketBoardSearchParams,
   DeviceListParams,
+  DeviceDetailedListParams,
   DeviceActivityParams,
   OrganizationListParams,
   OrganizationCreateParams,
   AlertListParams,
+  QueryParams,
+  QueryResponse,
 } from "./types.js";
 
 // ── Devices API ────────────────────────────────────────────────
@@ -33,6 +36,15 @@ class DevicesApi {
     if (params?.organizationId) query.organizationId = params.organizationId;
 
     return this.http.get<ApiRecord[]>("/v2/devices", query);
+  }
+
+  async listDetailed(params?: DeviceDetailedListParams): Promise<ApiRecord[]> {
+    const query: Record<string, unknown> = {};
+    if (params?.df) query.df = params.df;
+    if (params?.pageSize) query.pageSize = params.pageSize;
+    if (params?.cursor) query.cursor = params.cursor;
+
+    return this.http.get<ApiRecord[]>("/v2/devices-detailed", query);
   }
 
   async get(deviceId: number): Promise<ApiRecord> {
@@ -205,6 +217,76 @@ class TicketsApi {
     };
   }
 
+  /**
+   * Fetch all tickets across all boards with full pagination.
+   * Supports optional board search filters for server-side filtering.
+   */
+  async listAll(
+    params?: TicketListParams & { maxRecords?: number; filters?: Array<{ field: string; operator: string; value: string }> }
+  ): Promise<ApiRecord[]> {
+    const maxRecords = params?.maxRecords ?? 1000;
+    const pageSize = Math.min(params?.pageSize ?? 200, 200);
+    const boards = await this.listBoards();
+
+    if (!Array.isArray(boards) || boards.length === 0) {
+      return [];
+    }
+
+    const allTickets: ApiRecord[] = [];
+
+    for (const board of boards) {
+      const boardId = (board as Record<string, unknown>).id as number;
+      if (!boardId) continue;
+
+      // If a specific board was requested and this isn't it, skip
+      if (params?.boardId && boardId !== params.boardId) continue;
+
+      let cursor: string | number | undefined;
+      let hasMore = true;
+
+      while (hasMore && allTickets.length < maxRecords) {
+        const response = await this.getTicketsByBoard(boardId, {
+          sortBy: [{ field: "lastUpdated", direction: "DESC" }],
+          pageSize,
+          lastCursorId: cursor,
+          filters: params?.filters,
+        });
+
+        const obj = response as Record<string, unknown>;
+        const tickets = ((obj.data ?? obj.tickets ?? []) as ApiRecord[]);
+
+        if (tickets.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        // Apply client-side filters
+        for (const ticket of tickets) {
+          const t = ticket as Record<string, unknown>;
+          if (params?.status && t.status !== params.status) continue;
+          if (params?.priority && t.priority !== params.priority) continue;
+          if (params?.organizationId && t.clientId !== params.organizationId && t.organizationId !== params.organizationId) continue;
+          if (params?.deviceId && t.nodeId !== params.deviceId) continue;
+          allTickets.push(ticket);
+          if (allTickets.length >= maxRecords) break;
+        }
+
+        // Get next cursor from metadata
+        const metadata = obj.metadata as Record<string, unknown> | undefined;
+        const lastCursorId = metadata?.lastCursorId as number | undefined;
+        if (!lastCursorId || tickets.length < pageSize) {
+          hasMore = false;
+        } else {
+          cursor = lastCursorId;
+        }
+      }
+
+      if (allTickets.length >= maxRecords) break;
+    }
+
+    return allTickets;
+  }
+
   async get(ticketId: number): Promise<ApiRecord> {
     return this.http.get<ApiRecord>(`/v2/ticketing/ticket/${ticketId}`);
   }
@@ -272,6 +354,44 @@ class TicketsApi {
   }
 }
 
+// ── Queries API ───────────────────────────────────────────────
+
+class QueriesApi {
+  constructor(private http: NinjaOneHttp) {}
+
+  private buildQuery(params?: QueryParams): Record<string, unknown> {
+    const query: Record<string, unknown> = {};
+    if (params?.df) query.df = params.df;
+    if (params?.pageSize) query.pageSize = params.pageSize;
+    if (params?.cursor) query.cursor = params.cursor;
+    return query;
+  }
+
+  async deviceHealth(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/device-health", this.buildQuery(params));
+  }
+
+  async operatingSystems(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/operating-systems", this.buildQuery(params));
+  }
+
+  async antivirusStatus(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/antivirus-status", this.buildQuery(params));
+  }
+
+  async software(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/software", this.buildQuery(params));
+  }
+
+  async disks(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/disks", this.buildQuery(params));
+  }
+
+  async volumes(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/volumes", this.buildQuery(params));
+  }
+}
+
 // ── Main client ────────────────────────────────────────────────
 
 export class NinjaOneClient {
@@ -279,6 +399,7 @@ export class NinjaOneClient {
   readonly organizations: OrganizationsApi;
   readonly alerts: AlertsApi;
   readonly tickets: TicketsApi;
+  readonly queries: QueriesApi;
 
   constructor(config: NinjaOneClientConfig) {
     const http = new NinjaOneHttp(config);
@@ -286,5 +407,6 @@ export class NinjaOneClient {
     this.organizations = new OrganizationsApi(http);
     this.alerts = new AlertsApi(http);
     this.tickets = new TicketsApi(http);
+    this.queries = new QueriesApi(http);
   }
 }
