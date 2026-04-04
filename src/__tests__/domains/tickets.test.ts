@@ -10,11 +10,13 @@ const {
   mockTicketsGet,
   mockTicketsCreate,
   mockTicketsUpdate,
+  mockTicketsDelete,
   mockTicketsAddComment,
   mockTicketsGetComments,
-  mockTicketsGetBoards,
+  mockTicketsGetAttachments,
+  mockTicketsListBoards,
   mockTicketsGetTicketsByBoard,
-  mockTicketsGetForms,
+  mockTicketsListForms,
   mockTicketsGetForm,
   mockTicketsGetStatuses,
   mockTicketsGetAttributes,
@@ -26,11 +28,13 @@ const {
   const mockTicketsGet = vi.fn();
   const mockTicketsCreate = vi.fn();
   const mockTicketsUpdate = vi.fn();
+  const mockTicketsDelete = vi.fn();
   const mockTicketsAddComment = vi.fn();
   const mockTicketsGetComments = vi.fn();
-  const mockTicketsGetBoards = vi.fn();
+  const mockTicketsGetAttachments = vi.fn();
+  const mockTicketsListBoards = vi.fn();
   const mockTicketsGetTicketsByBoard = vi.fn();
-  const mockTicketsGetForms = vi.fn();
+  const mockTicketsListForms = vi.fn();
   const mockTicketsGetForm = vi.fn();
   const mockTicketsGetStatuses = vi.fn();
   const mockTicketsGetAttributes = vi.fn();
@@ -43,11 +47,13 @@ const {
       get: mockTicketsGet,
       create: mockTicketsCreate,
       update: mockTicketsUpdate,
+      delete: mockTicketsDelete,
       addComment: mockTicketsAddComment,
       getComments: mockTicketsGetComments,
-      getBoards: mockTicketsGetBoards,
+      getAttachments: mockTicketsGetAttachments,
+      listBoards: mockTicketsListBoards,
       getTicketsByBoard: mockTicketsGetTicketsByBoard,
-      getForms: mockTicketsGetForms,
+      listForms: mockTicketsListForms,
       getForm: mockTicketsGetForm,
       getStatuses: mockTicketsGetStatuses,
       getAttributes: mockTicketsGetAttributes,
@@ -61,11 +67,13 @@ const {
     mockTicketsGet,
     mockTicketsCreate,
     mockTicketsUpdate,
+    mockTicketsDelete,
     mockTicketsAddComment,
     mockTicketsGetComments,
-    mockTicketsGetBoards,
+    mockTicketsGetAttachments,
+    mockTicketsListBoards,
     mockTicketsGetTicketsByBoard,
-    mockTicketsGetForms,
+    mockTicketsListForms,
     mockTicketsGetForm,
     mockTicketsGetStatuses,
     mockTicketsGetAttributes,
@@ -92,10 +100,9 @@ import { ticketsHandler } from "../../domains/tickets.js";
 
 describe("Tickets Domain Handler", () => {
   beforeEach(() => {
-    // Clear all mocks
     vi.clearAllMocks();
 
-    // Reset mock implementations - list returns TicketListResponse
+    // Reset mock implementations
     mockTicketsList.mockResolvedValue({
       tickets: [
         { id: 1, subject: "Ticket 1", status: "OPEN", priority: "HIGH", type: "INCIDENT" },
@@ -119,6 +126,7 @@ describe("Tickets Domain Handler", () => {
       subject: "Updated Ticket",
       status: "IN_PROGRESS",
     });
+    mockTicketsDelete.mockResolvedValue(undefined);
     mockTicketsAddComment.mockResolvedValue({
       id: 50,
       ticketId: 1,
@@ -128,7 +136,10 @@ describe("Tickets Domain Handler", () => {
       { id: 1, body: "Comment 1", type: "COMMENT" },
       { id: 2, body: "Description update", type: "DESCRIPTION" },
     ]);
-    mockTicketsGetBoards.mockResolvedValue([
+    mockTicketsGetAttachments.mockResolvedValue([
+      { id: 1, fileName: "screenshot.png", size: 12345 },
+    ]);
+    mockTicketsListBoards.mockResolvedValue([
       { id: 1, name: "Support Board" },
       { id: 2, name: "Engineering Board" },
     ]);
@@ -138,14 +149,14 @@ describe("Tickets Domain Handler", () => {
       ],
       cursor: null,
     });
-    mockTicketsGetForms.mockResolvedValue([
-      { id: 1, name: "Default Form" },
-      { id: 2, name: "Hardware Request" },
+    mockTicketsListForms.mockResolvedValue([
+      { id: 1, name: "Default Form", isDefault: true },
+      { id: 2, name: "Hardware Request", isDefault: false },
     ]);
     mockTicketsGetForm.mockResolvedValue({
       id: 1,
       name: "Default Form",
-      fields: [{ name: "customField1", type: "text" }],
+      fields: [{ name: "customField1", type: "TEXT", required: false }],
     });
     mockTicketsGetStatuses.mockResolvedValue([
       { id: 1, name: "Open", statusCode: "OPEN" },
@@ -169,7 +180,7 @@ describe("Tickets Domain Handler", () => {
     it("should return all ticket tools", () => {
       const tools = ticketsHandler.getTools();
 
-      expect(tools.length).toBe(15);
+      expect(tools.length).toBe(17);
 
       const toolNames = tools.map((t) => t.name);
       // Core CRUD
@@ -177,9 +188,11 @@ describe("Tickets Domain Handler", () => {
       expect(toolNames).toContain("ninjaone_tickets_get");
       expect(toolNames).toContain("ninjaone_tickets_create");
       expect(toolNames).toContain("ninjaone_tickets_update");
+      expect(toolNames).toContain("ninjaone_tickets_delete");
       // Comments & Log Entries
       expect(toolNames).toContain("ninjaone_tickets_add_comment");
       expect(toolNames).toContain("ninjaone_tickets_log_entries");
+      expect(toolNames).toContain("ninjaone_tickets_get_attachments");
       // Boards
       expect(toolNames).toContain("ninjaone_tickets_list_boards");
       expect(toolNames).toContain("ninjaone_tickets_board_tickets");
@@ -198,16 +211,12 @@ describe("Tickets Domain Handler", () => {
     it("ninjaone_tickets_get should require ticket_id", () => {
       const tools = ticketsHandler.getTools();
       const getTool = tools.find((t) => t.name === "ninjaone_tickets_get");
-
-      expect(getTool).toBeDefined();
       expect(getTool?.inputSchema.required).toContain("ticket_id");
     });
 
     it("ninjaone_tickets_create should require subject and organization_id", () => {
       const tools = ticketsHandler.getTools();
       const createTool = tools.find((t) => t.name === "ninjaone_tickets_create");
-
-      expect(createTool).toBeDefined();
       expect(createTool?.inputSchema.required).toContain("subject");
       expect(createTool?.inputSchema.required).toContain("organization_id");
     });
@@ -215,26 +224,48 @@ describe("Tickets Domain Handler", () => {
     it("ninjaone_tickets_add_comment should require ticket_id and body", () => {
       const tools = ticketsHandler.getTools();
       const commentTool = tools.find((t) => t.name === "ninjaone_tickets_add_comment");
-
-      expect(commentTool).toBeDefined();
       expect(commentTool?.inputSchema.required).toContain("ticket_id");
       expect(commentTool?.inputSchema.required).toContain("body");
+    });
+
+    it("ninjaone_tickets_delete should require ticket_id", () => {
+      const tools = ticketsHandler.getTools();
+      const tool = tools.find((t) => t.name === "ninjaone_tickets_delete");
+      expect(tool?.inputSchema.required).toContain("ticket_id");
     });
 
     it("ninjaone_tickets_board_tickets should require board_id", () => {
       const tools = ticketsHandler.getTools();
       const tool = tools.find((t) => t.name === "ninjaone_tickets_board_tickets");
-
-      expect(tool).toBeDefined();
       expect(tool?.inputSchema.required).toContain("board_id");
     });
 
     it("ninjaone_tickets_get_form should require form_id", () => {
       const tools = ticketsHandler.getTools();
       const tool = tools.find((t) => t.name === "ninjaone_tickets_get_form");
-
-      expect(tool).toBeDefined();
       expect(tool?.inputSchema.required).toContain("form_id");
+    });
+
+    it("should include extended status enums (ON_HOLD, RESOLVED)", () => {
+      const tools = ticketsHandler.getTools();
+      const listTool = tools.find((t) => t.name === "ninjaone_tickets_list");
+      const statusProp = listTool?.inputSchema.properties?.status as { enum?: string[] };
+      expect(statusProp?.enum).toContain("ON_HOLD");
+      expect(statusProp?.enum).toContain("RESOLVED");
+    });
+
+    it("should include NONE in priority enums", () => {
+      const tools = ticketsHandler.getTools();
+      const createTool = tools.find((t) => t.name === "ninjaone_tickets_create");
+      const priorityProp = createTool?.inputSchema.properties?.priority as { enum?: string[] };
+      expect(priorityProp?.enum).toContain("NONE");
+    });
+
+    it("should include ALERT in type enums", () => {
+      const tools = ticketsHandler.getTools();
+      const createTool = tools.find((t) => t.name === "ninjaone_tickets_create");
+      const typeProp = createTool?.inputSchema.properties?.type as { enum?: string[] };
+      expect(typeProp?.enum).toContain("ALERT");
     });
   });
 
@@ -246,8 +277,6 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list", {});
 
         expect(result.isError).toBeUndefined();
-        expect(result.content[0].type).toBe("text");
-
         const data = JSON.parse(result.content[0].text);
         expect(data.tickets).toHaveLength(2);
         expect(data.cursor).toBe("next-page");
@@ -265,9 +294,10 @@ describe("Tickets Domain Handler", () => {
         expect(data.summary).toContain("organization 5");
       });
 
-      it("should pass filters to API", async () => {
+      it("should pass filters to API including priority", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_list", {
           status: "OPEN",
+          priority: "HIGH",
           organization_id: 5,
           device_id: 10,
           limit: 25,
@@ -275,6 +305,7 @@ describe("Tickets Domain Handler", () => {
 
         expect(mockTicketsList).toHaveBeenCalledWith({
           status: "OPEN",
+          priority: "HIGH",
           organizationId: 5,
           deviceId: 10,
           boardId: undefined,
@@ -292,7 +323,6 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.id).toBe(1);
         expect(data.subject).toBe("Ticket 1");
@@ -326,13 +356,12 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.message).toBe("Ticket created successfully");
         expect(data.ticket.id).toBe(100);
       });
 
-      it("should pass all fields to API", async () => {
+      it("should pass all core fields to API", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_create", {
           subject: "New Ticket",
           description: "Test description",
@@ -352,22 +381,28 @@ describe("Tickets Domain Handler", () => {
         });
       });
 
-      it("should pass optional fields (severity, tags, board_id, ticket_form_id)", async () => {
+      it("should pass extended fields (tags, board_id, ticket_form_id, requester, due_date, attributes)", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_create", {
           subject: "New Ticket",
           organization_id: 1,
-          severity: "HIGH",
           tags: ["urgent", "hardware"],
           board_id: 3,
           ticket_form_id: 5,
+          requester_email: "user@example.com",
+          requester_name: "Test User",
+          due_date: 1700000000000,
+          attributes: { customField1: "value1" },
         });
 
         expect(mockTicketsCreate).toHaveBeenCalledWith(
           expect.objectContaining({
-            severity: "HIGH",
             tags: ["urgent", "hardware"],
             boardId: 3,
             ticketFormId: 5,
+            requesterEmail: "user@example.com",
+            requesterName: "Test User",
+            dueDate: 1700000000000,
+            attributes: { customField1: "value1" },
           })
         );
       });
@@ -423,7 +458,6 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.message).toContain("Ticket 1 updated");
         expect(data.message).toContain("subject");
@@ -448,18 +482,20 @@ describe("Tickets Domain Handler", () => {
         expect(result.content[0].text).toContain("No fields to update");
       });
 
-      it("should pass optional fields (severity, type, tags)", async () => {
+      it("should pass extended fields (type, tags, due_date, attributes)", async () => {
         await ticketsHandler.handleCall("ninjaone_tickets_update", {
           ticket_id: 1,
-          severity: "CRITICAL",
           type: "INCIDENT",
           tags: ["escalated"],
+          due_date: 1700000000000,
+          attributes: { field1: "val" },
         });
 
         expect(mockTicketsUpdate).toHaveBeenCalledWith(1, expect.objectContaining({
-          severity: "CRITICAL",
           type: "INCIDENT",
           tags: ["escalated"],
+          dueDate: 1700000000000,
+          attributes: { field1: "val" },
         }));
       });
 
@@ -475,6 +511,29 @@ describe("Tickets Domain Handler", () => {
       });
     });
 
+    // ── Delete ─────────────────────────────────────────────
+
+    describe("ninjaone_tickets_delete", () => {
+      it("should delete a ticket", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_delete", {
+          ticket_id: 1,
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(mockTicketsDelete).toHaveBeenCalledWith(1);
+
+        const data = JSON.parse(result.content[0].text);
+        expect(data.message).toContain("deleted successfully");
+      });
+
+      it("should return error when ticket_id is missing", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_delete", {});
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("ticket_id is required");
+      });
+    });
+
     // ── Add Comment ────────────────────────────────────────
 
     describe("ninjaone_tickets_add_comment", () => {
@@ -485,10 +544,8 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.message).toContain("Public comment added");
-        expect(data.comment.ticketId).toBe(1);
       });
 
       it("should set internal flag when public is false", async () => {
@@ -557,7 +614,6 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("2 log entries");
         expect(data.entries).toHaveLength(2);
@@ -568,6 +624,15 @@ describe("Tickets Domain Handler", () => {
 
         expect(result.isError).toBe(true);
         expect(result.content[0].text).toContain("ticket_id is required");
+      });
+
+      it("should pass type filter to getComments", async () => {
+        await ticketsHandler.handleCall("ninjaone_tickets_log_entries", {
+          ticket_id: 1,
+          type: "COMMENT",
+        });
+
+        expect(mockTicketsGetComments).toHaveBeenCalledWith(1, "COMMENT");
       });
 
       it("should include type filter in summary", async () => {
@@ -604,6 +669,29 @@ describe("Tickets Domain Handler", () => {
       });
     });
 
+    // ── Attachments ────────────────────────────────────────
+
+    describe("ninjaone_tickets_get_attachments", () => {
+      it("should get ticket attachments", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_get_attachments", {
+          ticket_id: 1,
+        });
+
+        expect(result.isError).toBeUndefined();
+        const data = JSON.parse(result.content[0].text);
+        expect(data.summary).toContain("1 attachment(s)");
+        expect(data.attachments).toHaveLength(1);
+        expect(data.attachments[0].fileName).toBe("screenshot.png");
+      });
+
+      it("should return error when ticket_id is missing", async () => {
+        const result = await ticketsHandler.handleCall("ninjaone_tickets_get_attachments", {});
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("ticket_id is required");
+      });
+    });
+
     // ── Boards ─────────────────────────────────────────────
 
     describe("ninjaone_tickets_list_boards", () => {
@@ -611,6 +699,7 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list_boards", {});
 
         expect(result.isError).toBeUndefined();
+        expect(mockTicketsListBoards).toHaveBeenCalled();
 
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("2 ticket board(s)");
@@ -659,6 +748,7 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list_forms", {});
 
         expect(result.isError).toBeUndefined();
+        expect(mockTicketsListForms).toHaveBeenCalled();
 
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("2 ticket form(s)");
@@ -673,6 +763,7 @@ describe("Tickets Domain Handler", () => {
         });
 
         expect(result.isError).toBeUndefined();
+        expect(mockTicketsGetForm).toHaveBeenCalledWith(1);
 
         const data = JSON.parse(result.content[0].text);
         expect(data.name).toBe("Default Form");
@@ -691,7 +782,6 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list_statuses", {});
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("ticket statuses");
         expect(data.statuses).toHaveLength(4);
@@ -703,7 +793,6 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list_attributes", {});
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("2 ticket attribute(s)");
         expect(data.attributes).toHaveLength(2);
@@ -717,7 +806,6 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list_contacts", {});
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("1 contact(s)");
         expect(data.contacts).toHaveLength(1);
@@ -729,7 +817,6 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_list_users", {});
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.summary).toContain("1 user(s)");
         expect(data.users).toHaveLength(1);
@@ -743,7 +830,6 @@ describe("Tickets Domain Handler", () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_summary", {});
 
         expect(result.isError).toBeUndefined();
-
         const data = JSON.parse(result.content[0].text);
         expect(data.total).toBe(2);
         expect(data.byStatus).toBeDefined();

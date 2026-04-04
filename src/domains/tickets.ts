@@ -2,8 +2,9 @@
  * Tickets domain handler
  *
  * Provides tools for ticket operations in NinjaOne.
- * Supports full CRUD, comments, log entries, boards, forms,
- * statuses, attributes, contacts, and summary statistics.
+ * Supports full CRUD (including delete), comments, log entries,
+ * boards, forms, attachments, statuses, attributes, contacts,
+ * and summary statistics.
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -31,22 +32,6 @@ function errorResult(message: string): CallToolResult {
 }
 
 /**
- * Safely call a client method, returning a descriptive error if it doesn't exist.
- */
-async function safeClientCall<T>(
-  fn: (() => Promise<T>) | undefined,
-  endpointName: string
-): Promise<T> {
-  if (typeof fn !== "function") {
-    throw new Error(
-      `The "${endpointName}" endpoint is not supported by the current NinjaOne client library version. ` +
-      `Please upgrade @wyre-technology/node-ninjaone to the latest version.`
-    );
-  }
-  return fn();
-}
-
-/**
  * Get ticket domain tools
  */
 function getTools(): Tool[] {
@@ -61,9 +46,14 @@ function getTools(): Tool[] {
         properties: {
           status: {
             type: "string",
-            enum: ["OPEN", "IN_PROGRESS", "WAITING", "CLOSED"],
+            enum: ["OPEN", "IN_PROGRESS", "WAITING", "ON_HOLD", "RESOLVED", "CLOSED"],
             description:
-              "Filter by ticket status. OPEN = new/unstarted, IN_PROGRESS = being worked on, WAITING = blocked/awaiting response, CLOSED = resolved.",
+              "Filter by ticket status. OPEN = new/unstarted, IN_PROGRESS = being worked on, WAITING = awaiting response, ON_HOLD = paused, RESOLVED = fix applied, CLOSED = done.",
+          },
+          priority: {
+            type: "string",
+            enum: ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            description: "Filter by ticket priority.",
           },
           organization_id: {
             type: "number",
@@ -96,7 +86,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_tickets_get",
       description:
-        "Get full details for a specific ticket by its ID. Returns all ticket fields including subject, description, status, priority, type, assignee, organization, device, timestamps, and any custom attributes.",
+        "Get full details for a specific ticket by its ID. Returns all ticket fields including subject, description, status, priority, type, assignee, organization, device, timestamps, tags, custom attributes, and requester info.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -141,21 +131,15 @@ function getTools(): Tool[] {
           },
           priority: {
             type: "string",
-            enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            enum: ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
             description:
-              "Ticket priority level. CRITICAL = urgent/outage, HIGH = important/degraded, MEDIUM = normal, LOW = minor/cosmetic.",
-          },
-          severity: {
-            type: "string",
-            enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
-            description:
-              "Ticket severity level indicating business impact. Distinct from priority which indicates urgency.",
+              "Ticket priority level. CRITICAL = urgent/outage, HIGH = important/degraded, MEDIUM = normal, LOW = minor/cosmetic, NONE = unset.",
           },
           type: {
             type: "string",
-            enum: ["PROBLEM", "QUESTION", "INCIDENT", "TASK"],
+            enum: ["PROBLEM", "QUESTION", "INCIDENT", "TASK", "ALERT"],
             description:
-              "Ticket type. PROBLEM = root cause analysis needed, QUESTION = information request, INCIDENT = service disruption, TASK = planned work.",
+              "Ticket type. PROBLEM = root cause analysis needed, QUESTION = information request, INCIDENT = service disruption, TASK = planned work, ALERT = automated alert.",
           },
           tags: {
             type: "array",
@@ -166,6 +150,23 @@ function getTools(): Tool[] {
             type: "number",
             description:
               "Ticket form ID to use. Forms define custom fields and layout. Use ninjaone_tickets_list_forms to find form IDs.",
+          },
+          requester_email: {
+            type: "string",
+            description: "Email address of the ticket requester.",
+          },
+          requester_name: {
+            type: "string",
+            description: "Name of the ticket requester.",
+          },
+          due_date: {
+            type: "number",
+            description: "Due date as a Unix timestamp (milliseconds).",
+          },
+          attributes: {
+            type: "object",
+            description:
+              "Custom field values as key-value pairs. Use ninjaone_tickets_list_attributes to discover available custom fields.",
           },
         },
         required: ["subject", "organization_id"],
@@ -192,23 +193,18 @@ function getTools(): Tool[] {
           },
           status: {
             type: "string",
-            enum: ["OPEN", "IN_PROGRESS", "WAITING", "CLOSED"],
+            enum: ["OPEN", "IN_PROGRESS", "WAITING", "ON_HOLD", "RESOLVED", "CLOSED"],
             description:
               "New ticket status. Changing to CLOSED resolves the ticket. Changing to IN_PROGRESS indicates active work.",
           },
           priority: {
             type: "string",
-            enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            enum: ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
             description: "New ticket priority level.",
-          },
-          severity: {
-            type: "string",
-            enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
-            description: "New ticket severity level.",
           },
           type: {
             type: "string",
-            enum: ["PROBLEM", "QUESTION", "INCIDENT", "TASK"],
+            enum: ["PROBLEM", "QUESTION", "INCIDENT", "TASK", "ALERT"],
             description: "New ticket type.",
           },
           assignee_id: {
@@ -220,6 +216,30 @@ function getTools(): Tool[] {
             type: "array",
             items: { type: "string" },
             description: "Updated tags for the ticket. Replaces existing tags.",
+          },
+          due_date: {
+            type: "number",
+            description: "New due date as a Unix timestamp (milliseconds).",
+          },
+          attributes: {
+            type: "object",
+            description:
+              "Updated custom field values as key-value pairs.",
+          },
+        },
+        required: ["ticket_id"],
+      },
+    },
+    {
+      name: "ninjaone_tickets_delete",
+      description:
+        "Delete a ticket from NinjaOne. This permanently removes the ticket and cannot be undone. Use with caution.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          ticket_id: {
+            type: "number",
+            description: "The ticket ID to delete. Required.",
           },
         },
         required: ["ticket_id"],
@@ -267,6 +287,21 @@ function getTools(): Tool[] {
             enum: ["DESCRIPTION", "COMMENT", "CONDITION", "SAVE", "DELETE"],
             description:
               "Filter log entries by type. COMMENT = user/tech comments, DESCRIPTION = description changes, SAVE = field updates, CONDITION = automated condition triggers, DELETE = deletions. Omit to get all entry types.",
+          },
+        },
+        required: ["ticket_id"],
+      },
+    },
+    {
+      name: "ninjaone_tickets_get_attachments",
+      description:
+        "Get file attachments for a ticket. Returns attachment metadata including file names, content types, sizes, and upload times.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          ticket_id: {
+            type: "number",
+            description: "The ticket ID to get attachments for. Required.",
           },
         },
         required: ["ticket_id"],
@@ -320,7 +355,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_tickets_list_forms",
       description:
-        "List all ticket forms available in NinjaOne. Forms define the custom fields and layout used when creating or viewing tickets. Returns form IDs and names. Use this to find which form to use when creating tickets.",
+        "List all ticket forms available in NinjaOne. Forms define the custom fields and layout used when creating or viewing tickets. Returns form IDs, names, and whether they are active/default. Use this to find which form to use when creating tickets.",
       inputSchema: {
         type: "object" as const,
         properties: {},
@@ -329,7 +364,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_tickets_get_form",
       description:
-        "Get details for a specific ticket form by its ID. Returns the form definition including all custom fields, their types, and validation rules. Use this to understand what fields are available when creating tickets with a specific form.",
+        "Get details for a specific ticket form by its ID. Returns the form definition including all custom fields, their types (TEXT, TEXTAREA, NUMBER, DATE, CHECKBOX, SELECT, MULTISELECT), required status, and options. Use this to understand what fields are available when creating tickets with a specific form.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -344,7 +379,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_tickets_list_statuses",
       description:
-        "Get all available ticket statuses configured in NinjaOne. Returns the status names and IDs. Use this to discover custom statuses beyond the standard OPEN/IN_PROGRESS/WAITING/CLOSED.",
+        "Get all available ticket statuses configured in NinjaOne. Returns the status names and codes. Standard statuses include OPEN, IN_PROGRESS, WAITING, ON_HOLD, RESOLVED, and CLOSED, but custom statuses may also exist.",
       inputSchema: {
         type: "object" as const,
         properties: {},
@@ -353,7 +388,7 @@ function getTools(): Tool[] {
     {
       name: "ninjaone_tickets_list_attributes",
       description:
-        "List all ticket attributes (custom fields) configured in NinjaOne. Returns attribute names, types, and possible values. Use this to understand what custom data can be set on tickets.",
+        "List all ticket attributes (custom fields) configured in NinjaOne. Returns attribute names, types, and possible values. Use this to understand what custom data can be set on tickets via the 'attributes' field.",
       inputSchema: {
         type: "object" as const,
         properties: {},
@@ -425,6 +460,7 @@ async function handleCall(
       const cursor = args.cursor as string | undefined;
       logger.info("API call: tickets.list", {
         status: args.status,
+        priority: args.priority,
         organizationId: args.organization_id,
         deviceId: args.device_id,
         boardId: args.board_id,
@@ -434,6 +470,7 @@ async function handleCall(
 
       const response = await client.tickets.list({
         status: args.status as TicketStatus | undefined,
+        priority: args.priority as TicketPriority | undefined,
         organizationId: args.organization_id as number | undefined,
         deviceId: args.device_id as number | undefined,
         boardId: args.board_id as number | undefined,
@@ -493,10 +530,13 @@ async function handleCall(
       };
 
       // Add optional fields if provided
-      if (args.severity) createParams.severity = args.severity;
       if (args.tags) createParams.tags = args.tags;
       if (args.board_id) createParams.boardId = args.board_id;
       if (args.ticket_form_id) createParams.ticketFormId = args.ticket_form_id;
+      if (args.requester_email) createParams.requesterEmail = args.requester_email;
+      if (args.requester_name) createParams.requesterName = args.requester_name;
+      if (args.due_date) createParams.dueDate = args.due_date;
+      if (args.attributes) createParams.attributes = args.attributes;
 
       const ticket = await client.tickets.create(createParams as Parameters<typeof client.tickets.create>[0]);
       logger.debug("API response: tickets.create", { ticket });
@@ -528,14 +568,15 @@ async function handleCall(
       if (args.status !== undefined) updateParams.status = args.status;
       if (args.priority !== undefined) updateParams.priority = args.priority;
       if (args.assignee_id !== undefined) updateParams.assigneeUid = String(args.assignee_id);
-      if (args.severity !== undefined) updateParams.severity = args.severity;
       if (args.type !== undefined) updateParams.type = args.type;
       if (args.tags !== undefined) updateParams.tags = args.tags;
+      if (args.due_date !== undefined) updateParams.dueDate = args.due_date;
+      if (args.attributes !== undefined) updateParams.attributes = args.attributes;
 
       const fieldsUpdated = Object.keys(updateParams);
       if (fieldsUpdated.length === 0) {
         return errorResult(
-          "No fields to update. Provide at least one of: subject, description, status, priority, severity, type, assignee_id, tags."
+          "No fields to update. Provide at least one of: subject, description, status, priority, type, assignee_id, tags, due_date, attributes."
         );
       }
 
@@ -549,6 +590,30 @@ async function handleCall(
             type: "text",
             text: JSON.stringify(
               { message: `Ticket ${ticketId} updated (fields: ${fieldsUpdated.join(", ")})`, ticket },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "ninjaone_tickets_delete": {
+      const ticketId = resolveTicketId(args);
+      if (!ticketId) {
+        return errorResult("ticket_id is required. Provide the numeric ID of the ticket to delete.");
+      }
+
+      logger.info("API call: tickets.delete", { ticketId });
+      await (client.tickets as Record<string, CallableFunction>).delete(ticketId);
+      logger.debug("API response: tickets.delete", { ticketId });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              { message: `Ticket ${ticketId} deleted successfully` },
               null,
               2
             ),
@@ -605,18 +670,10 @@ async function handleCall(
       const typeFilter = args.type as string | undefined;
       logger.info("API call: tickets.getComments", { ticketId, type: typeFilter });
 
-      // Try passing type filter to the client; fall back to client-side filtering
-      let entries;
-      try {
-        entries = await client.tickets.getComments(ticketId, ...(typeFilter ? [{ type: typeFilter }] : []));
-      } catch {
-        entries = await client.tickets.getComments(ticketId);
-        if (typeFilter && Array.isArray(entries)) {
-          entries = entries.filter(
-            (entry: Record<string, unknown>) => entry.type === typeFilter
-          );
-        }
-      }
+      // The client's getComments accepts an optional type parameter
+      const entries = typeFilter
+        ? await client.tickets.getComments(ticketId, typeFilter)
+        : await client.tickets.getComments(ticketId);
       logger.debug("API response: tickets.getComments", { entries });
 
       const count = Array.isArray(entries) ? entries.length : 0;
@@ -638,17 +695,40 @@ async function handleCall(
       };
     }
 
+    case "ninjaone_tickets_get_attachments": {
+      const ticketId = resolveTicketId(args);
+      if (!ticketId) {
+        return errorResult("ticket_id is required. Provide the numeric ID of the ticket.");
+      }
+
+      logger.info("API call: tickets.getAttachments", { ticketId });
+      const attachments = await (client.tickets as Record<string, CallableFunction>).getAttachments(ticketId);
+      logger.debug("API response: tickets.getAttachments", { attachments });
+
+      const attachmentList = Array.isArray(attachments) ? attachments : [];
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                summary: `${attachmentList.length} attachment(s) for ticket ${ticketId}`,
+                attachments,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
     // ── Boards ─────────────────────────────────────────────────
 
     case "ninjaone_tickets_list_boards": {
-      logger.info("API call: tickets.getBoards");
-      const boards = await safeClientCall(
-        () => (client.tickets as Record<string, unknown>).getBoards
-          ? ((client.tickets as Record<string, CallableFunction>).getBoards() as Promise<unknown>)
-          : (client.tickets as Record<string, CallableFunction>).listBoards() as Promise<unknown>,
-        "listBoards"
-      );
-      logger.debug("API response: tickets.getBoards", { boards });
+      logger.info("API call: tickets.listBoards");
+      const boards = await (client.tickets as Record<string, CallableFunction>).listBoards();
+      logger.debug("API response: tickets.listBoards", { boards });
 
       const boardList = Array.isArray(boards) ? boards : [];
       return {
@@ -682,15 +762,18 @@ async function handleCall(
       logger.info("API call: tickets.getTicketsByBoard", { boardId, sortBy, sortDirection, pageSize });
 
       const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getByBoard = ticketsClient.getTicketsByBoard || ticketsClient.listByBoard || ticketsClient.boardTickets;
-      const response = await safeClientCall(
-        () => getByBoard.call(client.tickets, boardId, {
-          sortBy: [{ field: sortBy, direction: sortDirection }],
-          pageSize,
-          lastCursorId,
-        }) as Promise<unknown>,
-        "getTicketsByBoard"
-      );
+      const getByBoard = ticketsClient.getTicketsByBoard || ticketsClient.listByBoard;
+      if (typeof getByBoard !== "function") {
+        return errorResult(
+          "The getTicketsByBoard endpoint is not supported by the current NinjaOne client library version. " +
+          "Please upgrade @wyre-technology/node-ninjaone to the latest version."
+        );
+      }
+      const response = await getByBoard.call(client.tickets, boardId, {
+        sortBy: [{ field: sortBy, direction: sortDirection }],
+        pageSize,
+        lastCursorId,
+      });
       logger.debug("API response: tickets.getTicketsByBoard", { response });
 
       return {
@@ -706,14 +789,9 @@ async function handleCall(
     // ── Forms & Configuration ──────────────────────────────────
 
     case "ninjaone_tickets_list_forms": {
-      logger.info("API call: tickets.getForms");
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getForms = ticketsClient.getForms || ticketsClient.listForms;
-      const forms = await safeClientCall(
-        () => getForms.call(client.tickets) as Promise<unknown>,
-        "listForms"
-      );
-      logger.debug("API response: tickets.getForms", { forms });
+      logger.info("API call: tickets.listForms");
+      const forms = await (client.tickets as Record<string, CallableFunction>).listForms();
+      logger.debug("API response: tickets.listForms", { forms });
 
       const formList = Array.isArray(forms) ? forms : [];
       return {
@@ -740,12 +818,7 @@ async function handleCall(
       }
 
       logger.info("API call: tickets.getForm", { formId });
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getForm = ticketsClient.getForm || ticketsClient.getTicketForm;
-      const form = await safeClientCall(
-        () => getForm.call(client.tickets, formId) as Promise<unknown>,
-        "getForm"
-      );
+      const form = await (client.tickets as Record<string, CallableFunction>).getForm(formId);
       logger.debug("API response: tickets.getForm", { form });
 
       return {
@@ -757,10 +830,13 @@ async function handleCall(
       logger.info("API call: tickets.getStatuses");
       const ticketsClient = client.tickets as Record<string, CallableFunction>;
       const getStatuses = ticketsClient.getStatuses || ticketsClient.listStatuses;
-      const statuses = await safeClientCall(
-        () => getStatuses.call(client.tickets) as Promise<unknown>,
-        "getStatuses"
-      );
+      if (typeof getStatuses !== "function") {
+        return errorResult(
+          "The getStatuses endpoint is not supported by the current NinjaOne client library version. " +
+          "Please upgrade @wyre-technology/node-ninjaone to the latest version."
+        );
+      }
+      const statuses = await getStatuses.call(client.tickets);
       logger.debug("API response: tickets.getStatuses", { statuses });
 
       return {
@@ -784,10 +860,13 @@ async function handleCall(
       logger.info("API call: tickets.getAttributes");
       const ticketsClient = client.tickets as Record<string, CallableFunction>;
       const getAttributes = ticketsClient.getAttributes || ticketsClient.listAttributes;
-      const attributes = await safeClientCall(
-        () => getAttributes.call(client.tickets) as Promise<unknown>,
-        "getAttributes"
-      );
+      if (typeof getAttributes !== "function") {
+        return errorResult(
+          "The getAttributes endpoint is not supported by the current NinjaOne client library version. " +
+          "Please upgrade @wyre-technology/node-ninjaone to the latest version."
+        );
+      }
+      const attributes = await getAttributes.call(client.tickets);
       logger.debug("API response: tickets.getAttributes", { attributes });
 
       const attrList = Array.isArray(attributes) ? attributes : [];
@@ -814,10 +893,13 @@ async function handleCall(
       logger.info("API call: tickets.getContacts");
       const ticketsClient = client.tickets as Record<string, CallableFunction>;
       const getContacts = ticketsClient.getContacts || ticketsClient.listContacts;
-      const contacts = await safeClientCall(
-        () => getContacts.call(client.tickets) as Promise<unknown>,
-        "getContacts"
-      );
+      if (typeof getContacts !== "function") {
+        return errorResult(
+          "The getContacts endpoint is not supported by the current NinjaOne client library version. " +
+          "Please upgrade @wyre-technology/node-ninjaone to the latest version."
+        );
+      }
+      const contacts = await getContacts.call(client.tickets);
       logger.debug("API response: tickets.getContacts", { contacts });
 
       const contactList = Array.isArray(contacts) ? contacts : [];
@@ -842,10 +924,13 @@ async function handleCall(
       logger.info("API call: tickets.getUsers");
       const ticketsClient = client.tickets as Record<string, CallableFunction>;
       const getUsers = ticketsClient.getUsers || ticketsClient.listUsers || ticketsClient.getAppUserContacts;
-      const users = await safeClientCall(
-        () => getUsers.call(client.tickets) as Promise<unknown>,
-        "getUsers"
-      );
+      if (typeof getUsers !== "function") {
+        return errorResult(
+          "The getUsers endpoint is not supported by the current NinjaOne client library version. " +
+          "Please upgrade @wyre-technology/node-ninjaone to the latest version."
+        );
+      }
+      const users = await getUsers.call(client.tickets);
       logger.debug("API response: tickets.getUsers", { users });
 
       const userList = Array.isArray(users) ? users : [];
