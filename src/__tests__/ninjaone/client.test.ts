@@ -192,26 +192,32 @@ describe("NinjaOneClient", () => {
   // ── Tickets ────────────────────────────────────────────────
 
   describe("tickets", () => {
-    it("list should GET /api/v2/ticketing/ticket and normalize response", async () => {
+    it("list with boardId should POST to board search endpoint", async () => {
       seedToken();
+      // getTicketsByBoard call
       mockFetch.mockResolvedValueOnce(
-        jsonResponse({ tickets: [{ id: 1 }], cursor: "abc" })
+        jsonResponse({ data: [{ id: 1, status: "OPEN" }], cursor: "abc" })
       );
 
-      const result = await client.tickets.list({ status: "OPEN", pageSize: 50 });
+      const result = await client.tickets.list({ boardId: 2, status: "OPEN", pageSize: 50 });
 
-      expect(getCallPath(API)).toBe("/api/v2/ticketing/ticket");
-      expect(getCallQuery(API).get("status")).toBe("OPEN");
-      expect(result).toEqual({ tickets: [{ id: 1 }], cursor: "abc" });
+      expect(getCallPath(API)).toBe("/api/v2/ticketing/trigger/board/2/run");
+      expect(getCallMethod(API)).toBe("POST");
+      expect(result).toEqual({ tickets: [{ id: 1, status: "OPEN" }], cursor: "abc" });
     });
 
-    it("list should normalize array response", async () => {
+    it("list without boardId should discover boards then search", async () => {
       seedToken();
-      mockFetch.mockResolvedValueOnce(jsonResponse([{ id: 1 }, { id: 2 }]));
+      // listBoards call
+      mockFetch.mockResolvedValueOnce(jsonResponse([{ id: 5 }]));
+      // getTicketsByBoard call for board 5
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({ data: [{ id: 1 }, { id: 2 }] })
+      );
 
       const result = await client.tickets.list();
 
-      expect(result).toEqual({ tickets: [{ id: 1 }, { id: 2 }] });
+      expect(result.tickets).toEqual([{ id: 1 }, { id: 2 }]);
     });
 
     it("get should GET /api/v2/ticketing/ticket/{id}", async () => {

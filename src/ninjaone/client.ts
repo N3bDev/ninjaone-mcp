@@ -128,25 +128,79 @@ class TicketsApi {
   constructor(private http: NinjaOneHttp) {}
 
   async list(params?: TicketListParams): Promise<{ tickets: ApiRecord[]; cursor?: string }> {
-    const query: Record<string, unknown> = {};
-    if (params?.status) query.status = params.status;
-    if (params?.priority) query.priority = params.priority;
-    if (params?.organizationId) query.organizationId = params.organizationId;
-    if (params?.deviceId) query.deviceId = params.deviceId;
-    if (params?.boardId) query.boardId = params.boardId;
-    if (params?.pageSize) query.pageSize = params.pageSize;
-    if (params?.cursor) query.cursor = params.cursor;
+    // NinjaOne does not support GET /v2/ticketing/ticket (returns 405).
+    // Ticket listing is done via the board search endpoint:
+    //   POST /v2/ticketing/trigger/board/{boardId}/run
+    //
+    // If a boardId is provided, search that board directly.
+    // Otherwise, discover all boards and aggregate results.
 
-    // The NinjaOne list endpoint may return the array directly or wrapped.
-    // Normalize to { tickets, cursor } to match what domain handlers expect.
-    const response = await this.http.get<unknown>("/v2/ticketing/ticket", query);
+    const pageSize = params?.pageSize ?? 50;
 
-    if (Array.isArray(response)) {
-      return { tickets: response };
+    if (params?.boardId) {
+      return this.listByBoard(params.boardId, params, pageSize);
     }
+
+    // No board specified — discover boards and search all of them
+    const boards = await this.listBoards();
+    if (!Array.isArray(boards) || boards.length === 0) {
+      return { tickets: [] };
+    }
+
+    const allTickets: ApiRecord[] = [];
+    for (const board of boards) {
+      const boardId = (board as Record<string, unknown>).id as number;
+      if (!boardId) continue;
+
+      const result = await this.listByBoard(boardId, params, pageSize);
+      allTickets.push(...result.tickets);
+
+      if (allTickets.length >= pageSize) {
+        return { tickets: allTickets.slice(0, pageSize) };
+      }
+    }
+
+    return { tickets: allTickets };
+  }
+
+  private async listByBoard(
+    boardId: number,
+    params?: TicketListParams,
+    pageSize = 50
+  ): Promise<{ tickets: ApiRecord[]; cursor?: string }> {
+    const response = await this.getTicketsByBoard(boardId, {
+      sortBy: [{ field: "lastUpdated", direction: "DESC" }],
+      pageSize,
+      lastCursorId: params?.cursor,
+    });
+
     const obj = response as Record<string, unknown>;
+    let tickets = ((obj.data ?? obj.tickets ?? []) as ApiRecord[]);
+
+    // Apply client-side filters that the board search doesn't support
+    if (params?.status) {
+      tickets = tickets.filter(
+        (t) => (t as Record<string, unknown>).status === params.status
+      );
+    }
+    if (params?.priority) {
+      tickets = tickets.filter(
+        (t) => (t as Record<string, unknown>).priority === params.priority
+      );
+    }
+    if (params?.organizationId) {
+      tickets = tickets.filter(
+        (t) => (t as Record<string, unknown>).organizationId === params.organizationId
+      );
+    }
+    if (params?.deviceId) {
+      tickets = tickets.filter(
+        (t) => (t as Record<string, unknown>).nodeId === params.deviceId
+      );
+    }
+
     return {
-      tickets: (obj.tickets ?? obj.data ?? []) as ApiRecord[],
+      tickets,
       cursor: obj.cursor as string | undefined,
     };
   }
