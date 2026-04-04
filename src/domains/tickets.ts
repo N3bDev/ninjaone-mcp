@@ -605,7 +605,7 @@ async function handleCall(
       }
 
       logger.info("API call: tickets.delete", { ticketId });
-      await (client.tickets as Record<string, CallableFunction>).delete(ticketId);
+      await client.tickets.delete(ticketId);
       logger.debug("API response: tickets.delete", { ticketId });
 
       return {
@@ -702,7 +702,7 @@ async function handleCall(
       }
 
       logger.info("API call: tickets.getAttachments", { ticketId });
-      const attachments = await (client.tickets as Record<string, CallableFunction>).getAttachments(ticketId);
+      const attachments = await client.tickets.getAttachments(ticketId);
       logger.debug("API response: tickets.getAttachments", { attachments });
 
       const attachmentList = Array.isArray(attachments) ? attachments : [];
@@ -727,7 +727,7 @@ async function handleCall(
 
     case "ninjaone_tickets_list_boards": {
       logger.info("API call: tickets.listBoards");
-      const boards = await (client.tickets as Record<string, CallableFunction>).listBoards();
+      const boards = await client.tickets.listBoards();
       logger.debug("API response: tickets.listBoards", { boards });
 
       const boardList = Array.isArray(boards) ? boards : [];
@@ -761,15 +761,7 @@ async function handleCall(
 
       logger.info("API call: tickets.getTicketsByBoard", { boardId, sortBy, sortDirection, pageSize });
 
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getByBoard = ticketsClient.getTicketsByBoard || ticketsClient.listByBoard;
-      if (typeof getByBoard !== "function") {
-        return errorResult(
-          "The getTicketsByBoard endpoint is not supported by the current NinjaOne client library version. " +
-          "This method is not available on the NinjaOne client."
-        );
-      }
-      const response = await getByBoard.call(client.tickets, boardId, {
+      const response = await client.tickets.getTicketsByBoard(boardId, {
         sortBy: [{ field: sortBy, direction: sortDirection }],
         pageSize,
         lastCursorId,
@@ -790,7 +782,7 @@ async function handleCall(
 
     case "ninjaone_tickets_list_forms": {
       logger.info("API call: tickets.listForms");
-      const forms = await (client.tickets as Record<string, CallableFunction>).listForms();
+      const forms = await client.tickets.listForms();
       logger.debug("API response: tickets.listForms", { forms });
 
       const formList = Array.isArray(forms) ? forms : [];
@@ -818,7 +810,7 @@ async function handleCall(
       }
 
       logger.info("API call: tickets.getForm", { formId });
-      const form = await (client.tickets as Record<string, CallableFunction>).getForm(formId);
+      const form = await client.tickets.getForm(formId);
       logger.debug("API response: tickets.getForm", { form });
 
       return {
@@ -828,15 +820,7 @@ async function handleCall(
 
     case "ninjaone_tickets_list_statuses": {
       logger.info("API call: tickets.getStatuses");
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getStatuses = ticketsClient.getStatuses || ticketsClient.listStatuses;
-      if (typeof getStatuses !== "function") {
-        return errorResult(
-          "The getStatuses endpoint is not supported by the current NinjaOne client library version. " +
-          "This method is not available on the NinjaOne client."
-        );
-      }
-      const statuses = await getStatuses.call(client.tickets);
+      const statuses = await client.tickets.getStatuses();
       logger.debug("API response: tickets.getStatuses", { statuses });
 
       return {
@@ -858,15 +842,7 @@ async function handleCall(
 
     case "ninjaone_tickets_list_attributes": {
       logger.info("API call: tickets.getAttributes");
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getAttributes = ticketsClient.getAttributes || ticketsClient.listAttributes;
-      if (typeof getAttributes !== "function") {
-        return errorResult(
-          "The getAttributes endpoint is not supported by the current NinjaOne client library version. " +
-          "This method is not available on the NinjaOne client."
-        );
-      }
-      const attributes = await getAttributes.call(client.tickets);
+      const attributes = await client.tickets.getAttributes();
       logger.debug("API response: tickets.getAttributes", { attributes });
 
       const attrList = Array.isArray(attributes) ? attributes : [];
@@ -891,15 +867,7 @@ async function handleCall(
 
     case "ninjaone_tickets_list_contacts": {
       logger.info("API call: tickets.getContacts");
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getContacts = ticketsClient.getContacts || ticketsClient.listContacts;
-      if (typeof getContacts !== "function") {
-        return errorResult(
-          "The getContacts endpoint is not supported by the current NinjaOne client library version. " +
-          "This method is not available on the NinjaOne client."
-        );
-      }
-      const contacts = await getContacts.call(client.tickets);
+      const contacts = await client.tickets.getContacts();
       logger.debug("API response: tickets.getContacts", { contacts });
 
       const contactList = Array.isArray(contacts) ? contacts : [];
@@ -922,15 +890,7 @@ async function handleCall(
 
     case "ninjaone_tickets_list_users": {
       logger.info("API call: tickets.getUsers");
-      const ticketsClient = client.tickets as Record<string, CallableFunction>;
-      const getUsers = ticketsClient.getUsers || ticketsClient.listUsers || ticketsClient.getAppUserContacts;
-      if (typeof getUsers !== "function") {
-        return errorResult(
-          "The getUsers endpoint is not supported by the current NinjaOne client library version. " +
-          "This method is not available on the NinjaOne client."
-        );
-      }
-      const users = await getUsers.call(client.tickets);
+      const users = await client.tickets.getUsers();
       logger.debug("API response: tickets.getUsers", { users });
 
       const userList = Array.isArray(users) ? users : [];

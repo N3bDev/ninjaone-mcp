@@ -166,7 +166,7 @@ async function handleCall(
           if (orgs.length > 0) {
             const options = orgs.slice(0, 20).map((org) => ({
               value: String(org.id),
-              label: org.name || `Organization ${org.id}`,
+              label: String(org.name || `Organization ${org.id}`),
             }));
             options.push({ value: "all", label: "All organizations (no filter)" });
 

@@ -240,7 +240,7 @@ async function handleCall(
       const summary: Record<string, Record<string, number>> = {};
       for (const alert of alerts) {
         if (groupBy === "severity" || groupBy === "both") {
-          const sev = alert.severity || "UNKNOWN";
+          const sev = String(alert.severity || "UNKNOWN");
           summary.bySeverity = summary.bySeverity || {};
           summary.bySeverity[sev] = (summary.bySeverity[sev] || 0) + 1;
         }
