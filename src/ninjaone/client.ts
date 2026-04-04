@@ -22,6 +22,7 @@ import type {
   AlertListParams,
   QueryParams,
   QueryResponse,
+  ActivityListParams,
 } from "./types.js";
 
 // ── Devices API ────────────────────────────────────────────────
@@ -440,6 +441,51 @@ class QueriesApi {
   async volumes(params?: QueryParams): Promise<QueryResponse> {
     return this.http.get<QueryResponse>("/v2/queries/volumes", this.buildQuery(params));
   }
+
+  async antivirusThreats(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/antivirus-threats", this.buildQuery(params));
+  }
+
+  async computerSystems(params?: QueryParams): Promise<QueryResponse> {
+    return this.http.get<QueryResponse>("/v2/queries/computer-systems", this.buildQuery(params));
+  }
+}
+
+// ── System API ────────────────────────────────────────────────
+
+class SystemApi {
+  constructor(private http: NinjaOneHttp) {}
+
+  async listActivities(params?: ActivityListParams): Promise<ApiRecord> {
+    const query: Record<string, unknown> = {};
+    if (params?.activityType) query.activityType = params.activityType;
+    if (params?.status) query.status = params.status;
+    if (params?.deviceId) query.deviceId = params.deviceId;
+    if (params?.seriesUid) query.seriesUid = params.seriesUid;
+    if (params?.olderThan) query.olderThan = params.olderThan;
+    if (params?.newerThan) query.newerThan = params.newerThan;
+    if (params?.pageSize) query.pageSize = params.pageSize;
+    if (params?.lang) query.lang = params.lang;
+    if (params?.tz) query.tz = params.tz;
+
+    return this.http.get<ApiRecord>("/v2/activities", query);
+  }
+
+  async listPolicies(): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>("/v2/policies");
+  }
+
+  async listUsers(): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>("/v2/users");
+  }
+
+  async listTechnicians(): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>("/v2/user/technicians");
+  }
+
+  async listEndUsers(): Promise<ApiRecord[]> {
+    return this.http.get<ApiRecord[]>("/v2/user/end-users");
+  }
 }
 
 // ── Main client ────────────────────────────────────────────────
@@ -450,6 +496,7 @@ export class NinjaOneClient {
   readonly alerts: AlertsApi;
   readonly tickets: TicketsApi;
   readonly queries: QueriesApi;
+  readonly system: SystemApi;
 
   constructor(config: NinjaOneClientConfig) {
     const http = new NinjaOneHttp(config);
@@ -458,5 +505,6 @@ export class NinjaOneClient {
     this.alerts = new AlertsApi(http);
     this.tickets = new TicketsApi(http);
     this.queries = new QueriesApi(http);
+    this.system = new SystemApi(http);
   }
 }

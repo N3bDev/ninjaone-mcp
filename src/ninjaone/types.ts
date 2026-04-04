@@ -191,3 +191,17 @@ export interface QueryResponse<T = ApiRecord> {
   cursor?: { name: string; offset: number; count: number; expires: number };
   results: T[];
 }
+
+// ── Activity request types ────────────────────────────────────
+
+export interface ActivityListParams {
+  activityType?: string;
+  status?: string;
+  deviceId?: number;
+  seriesUid?: string;
+  olderThan?: number;
+  newerThan?: number;
+  pageSize?: number;
+  lang?: string;
+  tz?: string;
+}

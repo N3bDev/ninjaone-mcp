@@ -387,6 +387,62 @@ function getTools(): Tool[] {
         required: ["device_id"],
       },
     },
+    {
+      name: "ninjaone_devices_processors",
+      description:
+        "Get CPU/processor details for a specific device. Returns architecture, clock speed, core count, and model name.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_last_user",
+      description:
+        "Get the last logged-on user for a specific device. Returns username and logon time.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          device_id: {
+            type: "number",
+            description: "The device ID",
+          },
+        },
+        required: ["device_id"],
+      },
+    },
+    {
+      name: "ninjaone_devices_hardware",
+      description:
+        "Get hardware inventory across devices. Returns manufacturer, model, serial number, RAM, domain, and chassis type per device. Supports device filter for scoping.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          organization_id: {
+            type: "number",
+            description: "Filter by organization ID",
+          },
+          device_class: {
+            type: "string",
+            description: "Filter by device class",
+          },
+          df: {
+            type: "string",
+            description: "Raw NinjaOne device filter string",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results (default: 200)",
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -662,6 +718,45 @@ async function handleCall(
 
       return {
         content: [{ type: "text", text: JSON.stringify(activities, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_processors": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getProcessors", { deviceId });
+      const processors = await client.devices.getProcessors(deviceId);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(processors, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_last_user": {
+      const deviceId = args.device_id as number;
+      logger.info("API call: devices.getLastLoggedOnUser", { deviceId });
+      const user = await client.devices.getLastLoggedOnUser(deviceId);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(user, null, 2) }],
+      };
+    }
+
+    case "ninjaone_devices_hardware": {
+      const limit = (args.limit as number) || 200;
+      const df = (args.df as string) || buildDf(args);
+
+      logger.info("API call: queries.computerSystems", { df, limit });
+
+      const response = await client.queries.computerSystems({ df, pageSize: limit });
+      const results = response.results || [];
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ total: results.length, results }, null, 2),
+          },
+        ],
       };
     }
 

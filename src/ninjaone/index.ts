@@ -37,6 +37,7 @@ export type {
   QueryParams,
   DeviceDetailedListParams,
   QueryResponse,
+  ActivityListParams,
 
   // Generic
   ApiRecord,
