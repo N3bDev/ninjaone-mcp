@@ -185,6 +185,8 @@ Each team member's MCP client sends credentials via headers:
 **Pros**: Each person uses their own API credentials, full audit trail per user.
 **Best for**: Teams that need per-user access control and auditing.
 
+> **Security note**: Gateway mode transmits NinjaOne client secrets in HTTP headers. For any deployment beyond localhost, place the server behind a reverse proxy (e.g., nginx, Caddy) with TLS termination to encrypt credentials in transit.
+
 ## HTTP Transport
 
 For hosted deployments, set `MCP_TRANSPORT=http`:

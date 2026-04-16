@@ -13,6 +13,12 @@ const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 /** Default timeout (ms) for all HTTP requests. */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** Maximum number of retries for 429 (rate limited) responses. */
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+/** Default backoff (ms) when no Retry-After header is provided. */
+const DEFAULT_RATE_LIMIT_BACKOFF_MS = 2_000;
+
 export class NinjaOneHttp {
   private readonly baseUrl: string;
   private readonly clientId: string;
@@ -97,8 +103,26 @@ export class NinjaOneHttp {
   }
 
   /**
+   * Parse the Retry-After header value into milliseconds.
+   * Supports both delay-seconds and HTTP-date formats.
+   */
+  private parseRetryAfter(res: Response): number {
+    const header = res.headers.get("Retry-After");
+    if (!header) return DEFAULT_RATE_LIMIT_BACKOFF_MS;
+
+    const seconds = Number(header);
+    if (!isNaN(seconds)) return seconds * 1000;
+
+    // Try HTTP-date format
+    const date = Date.parse(header);
+    if (!isNaN(date)) return Math.max(0, date - Date.now());
+
+    return DEFAULT_RATE_LIMIT_BACKOFF_MS;
+  }
+
+  /**
    * Make an authenticated HTTP request to the NinjaOne API.
-   * Retries once on 401 (expired token).
+   * Retries once on 401 (expired token) and up to 3 times on 429 (rate limited).
    */
   async request<T = unknown>(
     method: string,
@@ -129,6 +153,13 @@ export class NinjaOneHttp {
       this.accessToken = null;
       const newToken = await this.ensureToken();
       headers.Authorization = `Bearer ${newToken}`;
+      res = await fetch(url, { method, headers, body: bodyStr, signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) });
+    }
+
+    // Retry on 429 with exponential backoff
+    for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES && res.status === 429; attempt++) {
+      const delay = this.parseRetryAfter(res) * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
       res = await fetch(url, { method, headers, body: bodyStr, signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) });
     }
 

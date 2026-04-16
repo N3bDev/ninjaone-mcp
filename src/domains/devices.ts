@@ -193,12 +193,20 @@ async function handleCall(
         cursor,
       });
 
-      const devices = await client.devices.list({
+      let devices = await client.devices.list({
         organizationId,
         pageSize: limit,
         cursor,
       });
       logger.debug("API response: devices.list", { deviceCount: devices.length });
+
+      // Client-side filtering for fields the API doesn't filter natively
+      if (args.device_class) {
+        devices = devices.filter((d) => d.nodeClass === args.device_class);
+      }
+      if (args.online !== undefined) {
+        devices = devices.filter((d) => d.online === args.online);
+      }
 
       return {
         content: [
