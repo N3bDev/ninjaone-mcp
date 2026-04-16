@@ -10,6 +10,9 @@ import type { NinjaOneClientConfig, OAuthTokenResponse } from "./types.js";
 /** Buffer (ms) before token expiry to trigger a proactive refresh. */
 const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 
+/** Default timeout (ms) for all HTTP requests. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export class NinjaOneHttp {
   private readonly baseUrl: string;
   private readonly clientId: string;
@@ -44,6 +47,7 @@ export class NinjaOneHttp {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -118,14 +122,14 @@ export class NinjaOneHttp {
       bodyStr = JSON.stringify(options.body);
     }
 
-    let res = await fetch(url, { method, headers, body: bodyStr });
+    let res = await fetch(url, { method, headers, body: bodyStr, signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) });
 
     // Retry once on 401 — token may have been revoked or expired.
     if (res.status === 401) {
       this.accessToken = null;
       const newToken = await this.ensureToken();
       headers.Authorization = `Bearer ${newToken}`;
-      res = await fetch(url, { method, headers, body: bodyStr });
+      res = await fetch(url, { method, headers, body: bodyStr, signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) });
     }
 
     // 204 No Content — return empty

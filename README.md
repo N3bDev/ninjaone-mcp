@@ -135,6 +135,56 @@ Once configured, just ask Claude naturally:
 - "Create a ticket for the printer issue at Acme Corp"
 - "Give me a weekly ticket summary"
 
+## Team Deployment
+
+Three options for deploying to your team, depending on your needs:
+
+### Option A: Individual Local Setup (Simplest)
+
+Each team member runs the server locally via Claude Desktop. Everyone gets their own NinjaOne API credentials and configures their own Claude Desktop config as shown in [Setup](#3-configure-claude-desktop) above.
+
+**Pros**: No shared infrastructure, each person controls their own access.
+**Best for**: Small teams where each member needs their own NinjaOne API identity.
+
+### Option B: Shared Server (Single Identity)
+
+Run one Docker instance with shared credentials. All team members point their MCP client at the same endpoint.
+
+```bash
+# Copy and edit the example env file
+cp .env.example .env
+# Edit .env with your shared credentials
+
+# Start the server
+docker compose up -d
+```
+
+The server will be available at `http://your-server:8080/mcp`.
+
+**Pros**: Single server to manage, simple setup.
+**Best for**: Teams that share one NinjaOne API identity.
+
+### Option C: Shared Server with Gateway Mode (Multi-User)
+
+Run one Docker instance in gateway mode. Each team member passes their own credentials via headers on every request, keeping API identities separate.
+
+```bash
+# In your .env file, set:
+AUTH_MODE=gateway
+MCP_TRANSPORT=http
+
+# Start the server
+docker compose up -d
+```
+
+Each team member's MCP client sends credentials via headers:
+- `X-Ninja-Client-ID` — Their NinjaOne Client ID
+- `X-Ninja-Client-Secret` — Their NinjaOne Client Secret
+- `X-Ninja-Region` (optional) — Their NinjaOne region
+
+**Pros**: Each person uses their own API credentials, full audit trail per user.
+**Best for**: Teams that need per-user access control and auditing.
+
 ## HTTP Transport
 
 For hosted deployments, set `MCP_TRANSPORT=http`:
@@ -159,7 +209,7 @@ Gateway mode (`AUTH_MODE=gateway`) accepts credentials via request headers inste
 ```bash
 npm install
 npm run build    # TypeScript compilation
-npm test         # Run test suite (186 tests)
+npm test         # Run test suite
 ```
 
 ## License

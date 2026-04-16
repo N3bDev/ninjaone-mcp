@@ -32,6 +32,8 @@ import {
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getDomainHandler, getAvailableDomains } from "./domains/index.js";
 import { getCredentials } from "./utils/client.js";
+import { requestContext } from "./utils/request-context.js";
+import { isValidRegion, getBaseUrlForRegion, type NinjaOneRegion } from "./utils/types.js";
 import { logger } from "./utils/logger.js";
 import { setServerRef } from "./utils/server-ref.js";
 
@@ -198,11 +200,11 @@ async function startHttpTransport(): Promise<void> {
 
     // MCP endpoint
     if (url.pathname === "/mcp") {
-      // In gateway mode, extract credentials from headers
+      // In gateway mode, extract credentials from headers and run in scoped context
       if (isGatewayMode) {
         const clientId = req.headers["x-ninja-client-id"] as string | undefined;
         const clientSecret = req.headers["x-ninja-client-secret"] as string | undefined;
-        const region = req.headers["x-ninja-region"] as string | undefined;
+        const regionHeader = req.headers["x-ninja-region"] as string | undefined;
 
         if (!clientId || !clientSecret) {
           res.writeHead(401, { "Content-Type": "application/json" });
@@ -218,12 +220,16 @@ async function startHttpTransport(): Promise<void> {
           return;
         }
 
-        // Set environment variables for this request so getCredentials() picks them up
-        process.env.NINJAONE_CLIENT_ID = clientId;
-        process.env.NINJAONE_CLIENT_SECRET = clientSecret;
-        if (region) {
-          process.env.NINJAONE_REGION = region;
-        }
+        const regionEnv = regionHeader?.toLowerCase() || "us";
+        const region: NinjaOneRegion = isValidRegion(regionEnv) ? regionEnv as NinjaOneRegion : "us";
+        const baseUrl = getBaseUrlForRegion(region);
+
+        // Run the request inside an AsyncLocalStorage context so
+        // getCredentials() returns these per-request creds instead of process.env
+        requestContext.run({ credentials: { clientId, clientSecret, region, baseUrl } }, () => {
+          transport.handleRequest(req, res);
+        });
+        return;
       }
 
       transport.handleRequest(req, res);

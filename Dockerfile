@@ -5,7 +5,6 @@ FROM node:22-alpine AS builder
 ARG VERSION="unknown"
 ARG COMMIT_SHA="unknown"
 ARG BUILD_DATE="unknown"
-ARG GITHUB_TOKEN
 
 # Set working directory
 WORKDIR /app
@@ -13,11 +12,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with GitHub Packages auth
-RUN echo "@wyre-technology:registry=https://npm.pkg.github.com" > .npmrc && \
-    echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc && \
-    npm ci --ignore-scripts && \
-    rm -f .npmrc
+# Install dependencies
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
