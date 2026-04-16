@@ -20,6 +20,9 @@ services:
       - NINJAONE_REGION=${NINJAONE_REGION:-us}
       - MCP_SERVER_NAME=${MCP_SERVER_NAME:-ninjaone-mcp}
 
+      # Authentication mode: env (single-user) or gateway (multi-user, header-based)
+      - AUTH_MODE=${AUTH_MODE:-env}
+
       # Logging configuration
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=production
