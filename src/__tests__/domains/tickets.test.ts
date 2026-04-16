@@ -845,11 +845,14 @@ describe("Tickets Domain Handler", () => {
         });
       });
 
-      it("should indicate when more results exist", async () => {
+      it("should indicate when more results exist and include pagination notice", async () => {
         const result = await ticketsHandler.handleCall("ninjaone_tickets_summary", {});
 
         const data = JSON.parse(result.content[0].text);
         expect(data.hasMore).toBe(true);
+        expect(data.cursor).toBeDefined();
+        expect(data.summary).toContain("More results exist");
+        expect(data.summary).toContain("pagination");
       });
     });
 

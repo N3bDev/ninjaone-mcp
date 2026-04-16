@@ -904,15 +904,21 @@ async function handleCall(
         .filter(Boolean)
         .join(", ");
 
+      const hasMore = !!response.cursor;
+      const summaryText = hasMore
+        ? `Ticket summary${scope ? ` for ${scope}` : ""}: showing counts from the first ${tickets.length} ticket(s). More results exist — use pagination (cursor) to retrieve additional tickets for a complete count.`
+        : `Ticket summary${scope ? ` for ${scope}` : ""}: ${tickets.length} total ticket(s)`;
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
               {
-                summary: `Ticket summary${scope ? ` for ${scope}` : ""}: ${tickets.length} total ticket(s)`,
+                summary: summaryText,
                 total: tickets.length,
-                hasMore: !!response.cursor,
+                hasMore,
+                ...(hasMore ? { cursor: response.cursor } : {}),
                 ...summary,
               },
               null,

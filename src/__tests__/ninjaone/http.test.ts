@@ -189,4 +189,40 @@ describe("NinjaOneHttp", () => {
       expect(mockFetch.mock.calls[3][1].headers.Authorization).toBe("Bearer token-2");
     });
   });
+
+  describe("429 rate limit retry", () => {
+    it("should retry on 429 and succeed", async () => {
+      // Token
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({ access_token: "test-token", expires_in: 3600 })
+      );
+      // First API call returns 429
+      mockFetch.mockResolvedValueOnce(
+        new Response("Rate limited", { status: 429, headers: { "Retry-After": "0" } })
+      );
+      // Retry succeeds
+      mockFetch.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+
+      const result = await http.get("/v2/test");
+
+      expect(result).toEqual({ id: 1 });
+      // 1 token + 1 initial (429) + 1 retry = 3
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it("should throw after exhausting 429 retries", async () => {
+      // Token
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse({ access_token: "test-token", expires_in: 3600 })
+      );
+      // All API calls return 429
+      for (let i = 0; i < 4; i++) {
+        mockFetch.mockResolvedValueOnce(
+          new Response("Rate limited", { status: 429, headers: { "Retry-After": "0" } })
+        );
+      }
+
+      await expect(http.get("/v2/test")).rejects.toThrow("NinjaOne API error (429 GET /v2/test)");
+    });
+  });
 });

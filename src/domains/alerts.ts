@@ -81,11 +81,6 @@ function getTools(): Tool[] {
             type: "number",
             description: "Reset all alerts for this organization ID",
           },
-          severity: {
-            type: "string",
-            enum: ["CRITICAL", "MAJOR", "MINOR", "NONE"],
-            description: "Only reset alerts of this severity",
-          },
         },
       },
     },
@@ -195,7 +190,6 @@ async function handleCall(
     case "ninjaone_alerts_reset_all": {
       const deviceId = args.device_id as number | undefined;
       const organizationId = args.organization_id as number | undefined;
-      const severity = args.severity as string | undefined;
 
       if (!deviceId && !organizationId) {
         return {
@@ -209,7 +203,7 @@ async function handleCall(
         };
       }
 
-      logger.info("API call: alerts.resetAll", { deviceId, organizationId, severity });
+      logger.info("API call: alerts.resetAll", { deviceId, organizationId });
       let result;
       if (deviceId) {
         result = await client.alerts.resetByDevice(deviceId);

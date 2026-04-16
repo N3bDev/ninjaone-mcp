@@ -22,6 +22,7 @@
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -37,11 +38,15 @@ import { isValidRegion, getBaseUrlForRegion, type NinjaOneRegion } from "./utils
 import { logger } from "./utils/logger.js";
 import { setServerRef } from "./utils/server-ref.js";
 
+// Read version from package.json
+const require = createRequire(import.meta.url);
+const { version: SERVER_VERSION } = require("../package.json") as { version: string };
+
 // Create the MCP server
 const server = new Server(
   {
     name: "ninjaone-mcp",
-    version: "1.0.0",
+    version: SERVER_VERSION,
   },
   {
     capabilities: {
@@ -192,7 +197,7 @@ async function startHttpTransport(): Promise<void> {
             hasClientSecret: !!process.env.NINJAONE_CLIENT_SECRET,
           },
           logLevel: process.env.LOG_LEVEL || "info",
-          version: "1.0.0",
+          version: SERVER_VERSION,
         })
       );
       return;

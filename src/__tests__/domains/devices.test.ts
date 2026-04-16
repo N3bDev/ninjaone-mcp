@@ -72,8 +72,8 @@ describe("Devices Domain Handler", () => {
 
     // Reset mock implementations - list returns Device[] directly
     mockDevicesList.mockResolvedValue([
-      { id: 1, systemName: "Device 1", organizationId: 1 },
-      { id: 2, systemName: "Device 2", organizationId: 1 },
+      { id: 1, systemName: "Device 1", organizationId: 1, nodeClass: "WINDOWS_SERVER", online: true },
+      { id: 2, systemName: "Device 2", organizationId: 1, nodeClass: "WINDOWS_WORKSTATION", online: false },
     ]);
     mockDevicesGet.mockResolvedValue({
       id: 1,
@@ -155,6 +155,30 @@ describe("Devices Domain Handler", () => {
           pageSize: 10,
           cursor: undefined,
         });
+      });
+
+      it("should filter devices by device_class client-side", async () => {
+        const result = await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 1,
+          device_class: "WINDOWS_SERVER",
+        });
+
+        expect(result.isError).toBeUndefined();
+        const data = JSON.parse(result.content[0].text);
+        expect(data.devices).toHaveLength(1);
+        expect(data.devices[0].nodeClass).toBe("WINDOWS_SERVER");
+      });
+
+      it("should filter devices by online status client-side", async () => {
+        const result = await devicesHandler.handleCall("ninjaone_devices_list", {
+          organization_id: 1,
+          online: false,
+        });
+
+        expect(result.isError).toBeUndefined();
+        const data = JSON.parse(result.content[0].text);
+        expect(data.devices).toHaveLength(1);
+        expect(data.devices[0].online).toBe(false);
       });
     });
 
